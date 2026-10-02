@@ -1,10 +1,12 @@
-const CACHE_NAME = 'notux-v2';
+const CACHE_NAME = 'notux-v3';
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './css/style.css',
   './js/app.js',
+  './js/db.js',
+  './js/crypto.js',
   './icons/icon.svg',
   './icons/icon-192.png'
 ];
