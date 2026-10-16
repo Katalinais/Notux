@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v3';
+const CACHE_NAME = 'notux-v4';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const CORE_ASSETS = [
   './js/app.js',
   './js/db.js',
   './js/crypto.js',
+  './js/device.js',
   './icons/icon.svg',
   './icons/icon-192.png'
 ];
@@ -27,35 +28,35 @@ self.addEventListener('activate', event => {
   );
 });
 
-function cacheFirst(peticion) {
-  return caches.match(peticion).then(enCache => {
-    if (enCache) return enCache;
-    return fetch(peticion).then(respuesta => {
-      const clon = respuesta.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(peticion, clon));
-      return respuesta;
+function cacheFirst(request) {
+  return caches.match(request).then(cached => {
+    if (cached) return cached;
+    return fetch(request).then(response => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+      return response;
     });
   });
 }
 
-function networkFirst(peticion) {
-  return fetch(peticion)
-    .then(respuesta => {
-      const clon = respuesta.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(peticion, clon));
-      return respuesta;
+function networkFirst(request) {
+  return fetch(request)
+    .then(response => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+      return response;
     })
-    .catch(() => caches.match(peticion));
+    .catch(() => caches.match(request));
 }
 
-function staleWhileRevalidate(peticion) {
+function staleWhileRevalidate(request) {
   return caches.open(CACHE_NAME).then(cache =>
-    cache.match(peticion).then(enCache => {
-      const actualizacion = fetch(peticion).then(respuesta => {
-        cache.put(peticion, respuesta.clone());
-        return respuesta;
+    cache.match(request).then(cached => {
+      const update = fetch(request).then(response => {
+        cache.put(request, response.clone());
+        return response;
       });
-      return enCache || actualizacion;
+      return cached || update;
     })
   );
 }

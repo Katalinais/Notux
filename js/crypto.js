@@ -1,49 +1,49 @@
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const PBKDF2_ITERATIONS = 100000; // mínimo recomendado por OWASP para PBKDF2-SHA256 (revisar vigencia)
+const PBKDF2_ITERATIONS = 100000; // OWASP's current minimum for PBKDF2-SHA256 (check the latest recommendation)
 
-export async function calcularHash(texto) {
-  const datos = textEncoder.encode(texto);
-  const buffer = await crypto.subtle.digest('SHA-256', datos);
+export async function computeHash(text) {
+  const data = textEncoder.encode(text);
+  const buffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buffer))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
-export function generarSal() {
+export function generateSalt() {
   return crypto.getRandomValues(new Uint8Array(16));
 }
 
-// Deriva una clave AES-GCM reproducible a partir de una contraseña y una sal.
-// No es exportable: no se puede leer ni guardar, solo volver a derivar.
-export async function derivarClaveDesdeContrasena(contrasena, sal) {
-  const materialBase = await crypto.subtle.importKey(
+// Derives a reproducible AES-GCM key from a password and a salt.
+// Not exportable: it can't be read or saved, only re-derived.
+export async function deriveKeyFromPassword(password, salt) {
+  const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    textEncoder.encode(contrasena),
+    textEncoder.encode(password),
     'PBKDF2',
     false,
     ['deriveKey'],
   );
 
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: sal, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
-    materialBase,
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt'],
   );
 }
 
-export async function cifrarTexto(clave, texto) {
+export async function encryptText(key, text) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const datos = textEncoder.encode(texto);
-  const cifrado = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, clave, datos);
-  return { cifrado, iv }; // el IV no es secreto, se guarda junto al cifrado
+  const data = textEncoder.encode(text);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  return { ciphertext, iv }; // the IV isn't secret, it's stored alongside the ciphertext
 }
 
-// Si la clave o el IV no corresponden, o el cifrado fue alterado, decrypt()
-// rechaza la promesa en vez de devolver datos corruptos.
-export async function descifrarTexto(clave, { cifrado, iv }) {
-  const datos = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, clave, cifrado);
-  return textDecoder.decode(datos);
+// If the key or IV don't match, or the ciphertext was tampered with, decrypt()
+// rejects the promise instead of returning corrupted data.
+export async function decryptText(key, { ciphertext, iv }) {
+  const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+  return textDecoder.decode(data);
 }
