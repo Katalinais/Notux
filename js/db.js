@@ -332,3 +332,35 @@ export function createBlocks(db, blocks) {
     tx.onabort = () => reject(tx.error);
   });
 }
+
+/* ---------- Backup ---------- */
+export const DATA_STORES = ['tasks', 'notes', 'schedule', 'config'];
+export { DB_VERSION };
+
+// Reads every store in one readonly transaction, so the snapshot is consistent.
+export function exportAll(db) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DATA_STORES, 'readonly');
+    const out = {};
+    for (const name of DATA_STORES) {
+      tx.objectStore(name).getAll().onsuccess = (e) => (out[name] = e.target.result);
+    }
+    tx.oncomplete = () => resolve(out);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// Replaces the contents of every store in one transaction: if any record is
+// rejected (e.g. a duplicate task title), nothing is cleared or written.
+export function replaceAll(db, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(DATA_STORES, 'readwrite');
+    for (const name of DATA_STORES) {
+      const store = tx.objectStore(name);
+      store.clear();
+      for (const record of data[name] ?? []) store.add(record);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
+  });
+}

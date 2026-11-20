@@ -24,12 +24,9 @@ const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 
 const monthFmt = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
 const dayLongFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
-const dayLabelFmt = new Intl.DateTimeFormat(LOCALE, {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-});
+const monthYearFmt = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
+const weekdayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long' });
+const dayContext = (d) => `de ${monthYearFmt.format(d)}, ${weekdayFmt.format(d)}`;
 
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -156,10 +153,12 @@ export function initCalendar({ getTasks, renderTask, onAddTask }) {
         tabindex: day === selectedDay ? '0' : '-1', // roving tabindex: one tab stop for the grid
         'aria-pressed': day === selectedDay ? 'true' : 'false',
         'aria-current': day === today ? 'date' : undefined,
-        'aria-label': `${dayLabelFmt.format(parseDay(day))}: ${countLabel(dayTasks)}`,
       },
       h('span', { class: 'cal-num' }, String(parseDay(day).getDate())),
-      h('span', { class: 'cal-pills', 'aria-hidden': 'true' }, ...pills),
+      // Name = visible text + this context ("20 de noviembre de 2026, viernes: 2
+      // pendientes. Parcial…"), so screen readers say what's on screen and more.
+      h('span', { class: 'sr-only' }, ` ${dayContext(parseDay(day))}: ${countLabel(dayTasks)}.`),
+      h('span', { class: 'cal-pills' }, ...pills),
       h('span', { class: 'cal-dots', 'aria-hidden': 'true' }, ...dots),
     );
   }

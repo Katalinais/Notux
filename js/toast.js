@@ -39,6 +39,7 @@ function syncRegion() {
 /**
  * @param {string} message
  * @param {{ type?: 'info' | 'error', action?: { label: string, onClick: () => void }, duration?: number }} [options]
+ *   duration in ms; 0 keeps the toast until it's closed or its action is used.
  */
 export function showToast(message, { type = 'info', action, duration } = {}) {
   const toast = document.createElement('div');
@@ -77,6 +78,7 @@ export function showToast(message, { type = 'info', action, duration } = {}) {
 
   getRegion().append(toast);
   syncRegion();
-  timer = setTimeout(dismiss, duration ?? (action ? WITH_ACTION_MS : DEFAULT_MS));
+  const ms = duration ?? (action ? WITH_ACTION_MS : DEFAULT_MS);
+  if (ms > 0) timer = setTimeout(dismiss, ms);
   return dismiss;
 }

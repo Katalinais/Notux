@@ -34,18 +34,68 @@ import { $, h, icon, iconButton, emptyState } from './dom.js';
 import { LOCALE, dayDiff, relativeDate, todayISO } from './dates.js';
 import { initCalendar } from './calendar.js';
 import { initSchedule, todayStatus, formatRange, formatDuration } from './schedule.js';
+import {
+  createBackup,
+  backupFileName,
+  parseBackup,
+  restoreBackup,
+  describeCounts,
+  InvalidBackupError,
+} from './backup.js';
+import * as reminders from './reminders.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
 const IDLE_LOCK_MS = 5 * 60 * 1000; // no taps or keys for this long → lock private notes
 const HIDDEN_LOCK_MS = 60 * 1000; // app in the background for this long → lock private notes
 
+/* ---------- Service worker and updates ---------- */
+// A new version installs in the background and waits; the user chooses when to
+// switch with "Actualizar", then the page reloads once onto the new code.
+let updateRequested = false;
+
+function offerUpdate(worker) {
+  showToast('Hay una versión nueva de Notux.', {
+    duration: 0,
+    action: {
+      label: 'Actualizar',
+      onClick: () => {
+        updateRequested = true;
+        worker.postMessage({ type: 'SKIP_WAITING' });
+      },
+    },
+  });
+}
+
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker
-      .register('sw.js')
-      .then((reg) => console.log('notux registered:', reg.scope))
-      .catch((err) => console.error('Error registering the service worker:', err));
+  window.addEventListener('load', async () => {
+    let reg;
+    try {
+      reg = await navigator.serviceWorker.register('sw.js');
+    } catch (err) {
+      console.error('Error registering the service worker:', err);
+      return;
+    }
+    // Only an *update* is worth announcing: on the very first install there's
+    // no controller yet and nothing old to replace.
+    if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const worker = reg.installing;
+      worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(worker);
+      });
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) reg.update().catch(() => {}); // offline is fine
+    });
+  });
+
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // clients.claim() on first install also fires this; reload only on request.
+    if (!updateRequested || reloading) return;
+    reloading = true;
+    location.reload();
   });
 }
 
@@ -206,6 +256,9 @@ async function updateLockState() {
   btn.replaceChildren(icon(notesKey ? 'unlock' : 'lock', 14), configured ? 'Notas privadas' : 'Configurar notas');
   btn.title = notesKey ? 'Bloquear notas privadas' : configured ? 'Desbloquear notas privadas' : 'Crear una contraseña';
   $('btn-change-password').hidden = !configured;
+  $('privacy-hint').textContent = configured
+    ? 'Se cifran con tu contraseña antes de guardarse. Si la olvidas, no se pueden recuperar.'
+    : 'Aún no tienes contraseña. Créala con «Configurar notas» en la barra superior.';
 }
 
 function updateNoteFormState() {
@@ -1010,6 +1063,186 @@ function renderNetwork() {
   );
 }
 
+/* ---------- Settings: backup, reminders ---------- */
+const LAST_BACKUP_KEY = 'notux.lastBackupAt';
+const STALE_BACKUP_DAYS = 14;
+
+function readLastBackup() {
+  try {
+    return localStorage.getItem(LAST_BACKUP_KEY);
+  } catch {
+    return null; // storage blocked: just don't show it
+  }
+}
+
+function renderBackupInfo() {
+  const el = $('backup-last');
+  const last = readLastBackup();
+  const hasData = tasks.length + notes.length + schedule.count() > 0;
+  const days = last ? Math.floor((Date.now() - new Date(last)) / 86400000) : null;
+  el.classList.toggle('is-stale', hasData && (days === null || days >= STALE_BACKUP_DAYS));
+  el.textContent =
+    days === null
+      ? hasData
+        ? 'Aún no has descargado ningún respaldo desde este navegador.'
+        : ''
+      : `Último respaldo: ${days === 0 ? 'hoy' : days === 1 ? 'ayer' : `hace ${days} días`}.`;
+  el.hidden = !el.textContent;
+}
+
+async function downloadBackup() {
+  const { blob, counts } = await createBackup(db);
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: backupFileName() });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  try {
+    localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+  } catch {
+    // ignore
+  }
+  renderBackupInfo();
+  return counts;
+}
+
+async function renderReminders() {
+  const toggle = $('reminders-toggle');
+  const info = await reminders.status(db);
+  toggle.checked = info.level === 'ok' || info.level === 'limited';
+  toggle.disabled = info.level === 'unsupported';
+  const el = $('reminders-status');
+  el.textContent = info.message;
+  el.hidden = !info.message;
+  el.className = `small ${info.level === 'ok' ? 'is-ok' : 'is-warn'}`;
+  $('reminders-test').hidden = !toggle.checked;
+}
+
+$('btn-settings').addEventListener('click', () => {
+  renderBackupInfo();
+  renderReminders();
+  updateLockState();
+  $('settings-dialog').showModal();
+});
+$('settings-close').addEventListener('click', () => $('settings-dialog').close());
+
+$('backup-export').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const counts = await downloadBackup();
+    showToast(`Respaldo descargado: ${describeCounts(counts)}.`);
+  } catch (err) {
+    console.error('Could not create the backup:', err);
+    showToast('No se pudo crear el respaldo.', { type: 'error' });
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+let pendingRestore = null; // parsed backup waiting for confirmation
+
+$('backup-import').addEventListener('click', () => $('backup-file').click());
+
+$('backup-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ''; // picking the same file again should still fire 'change'
+  if (!file) return;
+  try {
+    pendingRestore = parseBackup(await file.text());
+  } catch (err) {
+    if (!(err instanceof InvalidBackupError)) console.error('Could not read the backup:', err);
+    showToast(err instanceof InvalidBackupError ? err.message : 'No se pudo leer el archivo.', { type: 'error' });
+    return;
+  }
+  const { counts, exportedAt } = pendingRestore;
+  const when = exportedAt
+    ? new Date(exportedAt).toLocaleString(LOCALE, { dateStyle: 'long', timeStyle: 'short' })
+    : 'fecha desconocida';
+  $('restore-backup').textContent = `${describeCounts(counts)} · descargado el ${when}`;
+  $('restore-current').textContent = describeCounts({
+    tasks: tasks.length,
+    notes: notes.length,
+    schedule: schedule.count(),
+  });
+  $('restore-error').hidden = true;
+  $('restore-dialog').showModal();
+});
+
+$('restore-save-current').addEventListener('click', async () => {
+  try {
+    await downloadBackup();
+  } catch (err) {
+    console.error('Could not create the backup:', err);
+    showToast('No se pudo descargar el respaldo actual.', { type: 'error' });
+  }
+});
+
+$('restore-cancel').addEventListener('click', () => $('restore-dialog').close());
+$('restore-dialog').addEventListener('close', () => (pendingRestore = null));
+
+$('restore-confirm').addEventListener('click', async (e) => {
+  if (!pendingRestore) return;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    await restoreBackup(db, pendingRestore.data);
+  } catch (err) {
+    console.error('Could not restore the backup:', err);
+    $('restore-error').textContent = 'No se pudo restaurar. Tus datos actuales no se modificaron.';
+    $('restore-error').hidden = false;
+    return;
+  } finally {
+    btn.disabled = false;
+  }
+  const { counts } = pendingRestore;
+  $('restore-dialog').close();
+  $('settings-dialog').close();
+  await reloadAllData();
+  showToast(`Respaldo restaurado: ${describeCounts(counts)}.`);
+});
+
+// After a restore everything in memory is stale, including the notes key: the
+// restored notes may use another password, so they start locked.
+async function reloadAllData() {
+  notesKey = null;
+  revealedNoteId = null;
+  decryptedNotes.clear();
+  resetNoteForm();
+  for (const id of [...noteThumbUrls.keys(), ...noteAudioUrls.keys()]) forgetNoteMedia(id);
+  tasks = await getAllTasks(db);
+  notes = await getAllNotes(db);
+  await schedule.load(db);
+  $('task-note').value = '';
+  updateLockState();
+  updateNoteFormState();
+  render();
+  renderNotesView();
+  reminders.refresh(db);
+}
+
+$('reminders-toggle').addEventListener('change', async (e) => {
+  const toggle = e.currentTarget;
+  toggle.disabled = true;
+  try {
+    if (toggle.checked) {
+      const ok = await reminders.enable(db);
+      if (!ok) showToast('Sin permiso para notificaciones no se pueden enviar recordatorios.', { type: 'error' });
+    } else {
+      await reminders.disable(db);
+    }
+  } catch (err) {
+    console.error('Could not change the reminder setting:', err);
+    showToast('No se pudo cambiar el recordatorio.', { type: 'error' });
+  } finally {
+    toggle.disabled = false;
+    renderReminders();
+  }
+});
+
+$('reminders-test').addEventListener('click', () => reminders.sendTest());
+
 /* ---------- Startup ---------- */
 function notifyTaskSaveError(err) {
   console.error('Could not save the task:', err);
@@ -1113,6 +1346,7 @@ async function init() {
   updateBulkDoneButtonState();
   render();
   renderNotesView();
+  reminders.refresh(db).catch(() => {});
 }
 
 navigate();

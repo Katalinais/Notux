@@ -321,7 +321,6 @@ export function initSchedule({ onChange } = {}) {
         type: 'button',
         class: `sch-block blk-${b.color ?? 'indigo'}${len < 0.75 ? ' is-short' : ''}`,
         style: `--top: ${top}; --len: ${len}; --lane: ${lane}; --lanes: ${lanes};`,
-        'aria-label': `${b.subject}, ${dayName(b.day)} de ${formatRange(b)}${b.place ? `, ${b.place}` : ''}. Editar.`,
         onclick: (e) => {
           e.stopPropagation();
           openDialog({ block: b });
@@ -329,6 +328,7 @@ export function initSchedule({ onChange } = {}) {
       },
       h('span', { class: 'sch-block-title' }, b.subject),
       h('span', { class: 'sch-block-meta' }, formatRange(b) + (b.place ? ` · ${b.place}` : '')),
+      h('span', { class: 'sr-only' }, `, ${dayName(b.day)}. Editar.`),
     );
   }
 
@@ -432,7 +432,6 @@ export function initSchedule({ onChange } = {}) {
         type: 'button',
         class: `card agenda-item blk-${b.color ?? 'indigo'}${status?.status === 'past' ? ' is-past' : ''}`,
         onclick: () => openDialog({ block: b }),
-        'aria-label': `${b.subject}, ${formatRange(b)}${b.place ? `, ${b.place}` : ''}. Editar.`,
       },
       h('span', { class: 'agenda-time' }, formatTime(b.start), h('small', {}, formatTime(b.end))),
       h(
@@ -442,6 +441,7 @@ export function initSchedule({ onChange } = {}) {
         ...(b.place ? [h('span', { class: 'task-meta' }, b.place)] : []),
       ),
       ...(badge ? [h('span', { class: `chip ${status.status === 'now' ? 'chip-ok' : 'chip-warn'}` }, badge)] : []),
+      h('span', { class: 'sr-only' }, '. Editar.'),
       icon('edit', 16),
     );
   }
@@ -459,6 +459,7 @@ export function initSchedule({ onChange } = {}) {
     },
     render,
     todayBlocks: () => blocksOn(blocks, new Date().getDay()),
+    count: () => blocks.length,
     openDialog,
   };
 }

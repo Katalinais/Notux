@@ -37,6 +37,10 @@
     <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
     <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 21h16"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Zm4 11a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-5-3a5 5 0 0 0 10 0M12 19v3"/></symbol>
   </svg>
 
@@ -64,8 +68,8 @@
             <svg class="icon" width="16" height="16"><use href="#i-download"/></svg> Instalar
           </button>
           <button id="notes-lock" type="button" class="chip chip-warn"></button>
-          <button id="btn-change-password" type="button" class="btn btn-ghost icon-btn btn-sm" aria-label="Cambiar contraseña de las notas privadas" title="Cambiar contraseña" hidden>
-            <svg class="icon" width="16" height="16"><use href="#i-key"/></svg>
+          <button id="btn-settings" type="button" class="btn btn-ghost icon-btn btn-sm" aria-label="Ajustes" title="Ajustes">
+            <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-settings"/></svg>
           </button>
           <span id="net" class="chip chip-ok"></span>
         </div>
@@ -411,6 +415,75 @@
         <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="pw-dialog dialog-wide" aria-labelledby="settings-title">
+    <div class="card form settings">
+      <div class="dialog-head">
+        <h2 id="settings-title">Ajustes</h2>
+        <button type="button" id="settings-close" class="btn btn-ghost icon-btn" aria-label="Cerrar ajustes">
+          <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+      </div>
+
+      <section class="settings-section" aria-labelledby="backup-title">
+        <h3 id="backup-title">Respaldo</h3>
+        <p class="muted small">Tus datos solo viven en este navegador. Descarga un respaldo (tareas, notas con fotos y audios, horario) y guárdalo en otro lugar; con él puedes restaurar todo aquí o en otro dispositivo.</p>
+        <p id="backup-last" class="small"></p>
+        <div class="settings-actions">
+          <button type="button" id="backup-export" class="btn btn-primary btn-sm">
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-download"/></svg> Descargar respaldo
+          </button>
+          <button type="button" id="backup-import" class="btn btn-ghost btn-sm">
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-upload"/></svg> Restaurar…
+          </button>
+          <input type="file" id="backup-file" accept="application/json,.json" hidden>
+        </div>
+      </section>
+
+      <section class="settings-section" aria-labelledby="reminders-title">
+        <h3 id="reminders-title">Recordatorio diario</h3>
+        <p class="muted small">Una notificación por la mañana con las tareas que vencen hoy, las vencidas y tus clases del día.</p>
+        <label class="switch">
+          <input type="checkbox" id="reminders-toggle" role="switch">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span>Activar recordatorio</span>
+        </label>
+        <p id="reminders-status" class="small" hidden></p>
+        <button type="button" id="reminders-test" class="btn btn-ghost btn-sm" hidden>
+          <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-bell"/></svg> Enviar uno de prueba
+        </button>
+      </section>
+
+      <section class="settings-section" aria-labelledby="privacy-title">
+        <h3 id="privacy-title">Notas privadas</h3>
+        <p id="privacy-hint" class="muted small"></p>
+        <div class="settings-actions">
+          <button type="button" id="btn-change-password" class="btn btn-ghost btn-sm" hidden>
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-key"/></svg> Cambiar contraseña
+          </button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="restore-dialog" class="pw-dialog dialog-wide" aria-labelledby="restore-title">
+    <div class="card form">
+      <h2 id="restore-title">¿Restaurar este respaldo?</h2>
+      <dl class="restore-compare">
+        <dt>Respaldo</dt><dd id="restore-backup"></dd>
+        <dt>Ahora tienes</dt><dd id="restore-current"></dd>
+      </dl>
+      <p class="notice-warn small"><strong>Se reemplazarán todos tus datos actuales</strong> por los del respaldo. Si el respaldo tiene notas privadas, se abrirán con la contraseña que tenías cuando lo descargaste.</p>
+      <button type="button" id="restore-save-current" class="btn btn-ghost btn-sm restore-save">
+        <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-download"/></svg> Descargar primero mis datos actuales
+      </button>
+      <p id="restore-error" class="task-meta overdue" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="restore-cancel" class="btn btn-ghost">Cancelar</button>
+        <button type="button" id="restore-confirm" class="btn btn-danger-solid">Reemplazar mis datos</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="camera-dialog" class="pw-dialog">
