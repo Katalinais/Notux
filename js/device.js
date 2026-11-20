@@ -2,6 +2,10 @@ export function isCameraSupported() {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
+export function isMicrophoneSupported() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+}
+
 // Requests permission and prefers the back camera, ideal for photographing notebooks/screens.
 export function openCamera(facingMode = 'environment') {
   return navigator.mediaDevices.getUserMedia({
@@ -29,6 +33,37 @@ export function capturePhoto(video, maxWidth = 640) {
   canvas.height = Math.round(video.videoHeight * scale);
   canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+}
+
+// Starts recording from the microphone and returns a small controller: call
+// stop() to finish and get the audio Blob, or cancel() to discard without saving.
+export async function startAudioRecording() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const chunks = [];
+  recorder.addEventListener('dataavailable', (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  });
+  recorder.start();
+
+  return {
+    stop: () =>
+      new Promise((resolve) => {
+        recorder.addEventListener(
+          'stop',
+          () => {
+            stream.getTracks().forEach((track) => track.stop());
+            resolve(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+          },
+          { once: true },
+        );
+        recorder.stop();
+      }),
+    cancel: () => {
+      stream.getTracks().forEach((track) => track.stop());
+    },
+  };
 }
 
 // Applies the same compression to a photo picked from the file system.

@@ -13,7 +13,15 @@ import {
   getAllNotes,
 } from './db.js';
 import { generateSalt, deriveKeyFromPassword, encryptText, decryptText } from './crypto.js';
-import { isCameraSupported, openCamera, stopCamera, capturePhoto, processGalleryPhoto } from './device.js';
+import {
+  isCameraSupported,
+  openCamera,
+  stopCamera,
+  capturePhoto,
+  processGalleryPhoto,
+  isMicrophoneSupported,
+  startAudioRecording,
+} from './device.js';
 
 const TASKS_KEY = 'notux.tasks';
 const NOTES_CONFIG_ID = 'privateNotes';
@@ -66,6 +74,13 @@ let cameraStream = null;
 let capturedPhoto = null; // Blob | null, for the note currently being composed
 let capturedPhotoUrl = null; // object URL for its preview, revoked on change/reset
 const noteThumbUrls = new Map(); // note.id -> object URL, revoked when the note is removed or re-rendered
+
+let activeRecording = null; // controller from startAudioRecording(), null when not recording
+let recordingTimerId = null;
+let recordingStartedAt = null;
+let capturedAudio = null; // Blob | null, for the note currently being composed
+let capturedAudioUrl = null;
+const noteAudioUrls = new Map(); // note.id -> object URL, same lifecycle as noteThumbUrls
 
 /* ---------- Routes ---------- */
 const VIEWS = ['inicio', 'tareas', 'calendario', 'horario', 'notas'];
@@ -344,6 +359,9 @@ async function removeTask(id) {
 if (!isCameraSupported()) {
   $('note-camera-btn').hidden = true;
 }
+if (!isMicrophoneSupported()) {
+  $('note-audio-btn').hidden = true;
+}
 
 function setNotePhoto(blob) {
   capturedPhoto = blob;
@@ -396,8 +414,68 @@ $('note-gallery-input').addEventListener('change', async (e) => {
   e.target.value = ''; // allow picking the same file again later
 });
 
+function setNoteAudio(blob) {
+  capturedAudio = blob;
+  if (capturedAudioUrl) URL.revokeObjectURL(capturedAudioUrl);
+  capturedAudioUrl = URL.createObjectURL(blob);
+  const audioEl = $('note-audio-preview');
+  audioEl.src = capturedAudioUrl;
+  audioEl.hidden = false;
+  $('note-audio-remove').hidden = false;
+}
+
+function resetNoteAudio() {
+  capturedAudio = null;
+  if (capturedAudioUrl) URL.revokeObjectURL(capturedAudioUrl);
+  capturedAudioUrl = null;
+  const audioEl = $('note-audio-preview');
+  audioEl.hidden = true;
+  audioEl.removeAttribute('src');
+  $('note-audio-remove').hidden = true;
+}
+
+function updateRecordButton(recording) {
+  const btn = $('note-audio-btn');
+  btn.classList.toggle('btn-recording', recording);
+  if (!recording) {
+    btn.replaceChildren(icon('mic', 18), ' Grabar audio');
+    return;
+  }
+  const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+  const mm = String(Math.floor(seconds / 60)).padStart(1, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+  btn.replaceChildren(icon('mic', 18), ` Detener (${mm}:${ss})`);
+}
+
+$('note-audio-btn').addEventListener('click', async () => {
+  if (activeRecording) {
+    clearInterval(recordingTimerId);
+    const recording = activeRecording;
+    activeRecording = null;
+    const blob = await recording.stop();
+    setNoteAudio(blob);
+    updateRecordButton(false);
+    return;
+  }
+  try {
+    activeRecording = await startAudioRecording();
+    recordingStartedAt = Date.now();
+    updateRecordButton(true);
+    recordingTimerId = setInterval(() => updateRecordButton(true), 500);
+  } catch (err) {
+    console.error('Could not start recording:', err);
+    alert('No se pudo grabar audio. Revisa los permisos del micrófono.');
+  }
+});
+
+$('note-audio-remove').addEventListener('click', resetNoteAudio);
+
 $('note-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (activeRecording) {
+    alert('Detén la grabación antes de guardar la nota.');
+    return;
+  }
   const titleInput = $('note-title');
   const title = titleInput.value.trim();
   if (!title) {
@@ -405,7 +483,7 @@ $('note-form').addEventListener('submit', async (e) => {
     return;
   }
   const text = $('note-text').value.trim();
-  const note = { title, text, photo: capturedPhoto, createdAt: new Date().toISOString() };
+  const note = { title, text, photo: capturedPhoto, audio: capturedAudio, createdAt: new Date().toISOString() };
 
   try {
     const id = await createNote(db, note);
@@ -417,18 +495,32 @@ $('note-form').addEventListener('submit', async (e) => {
   }
   e.target.reset();
   resetNotePhoto();
+  resetNoteAudio();
   renderNotesView();
 });
 
 async function removeNote(id) {
   await deleteNote(db, id);
   notes = notes.filter((n) => n.id !== id);
-  const url = noteThumbUrls.get(id);
-  if (url) {
-    URL.revokeObjectURL(url);
+  const thumbUrl = noteThumbUrls.get(id);
+  if (thumbUrl) {
+    URL.revokeObjectURL(thumbUrl);
     noteThumbUrls.delete(id);
   }
+  const audioUrl = noteAudioUrls.get(id);
+  if (audioUrl) {
+    URL.revokeObjectURL(audioUrl);
+    noteAudioUrls.delete(id);
+  }
   renderNotesView();
+}
+
+// Deterministic per note.id so cards don't re-shuffle their look on every re-render.
+function noteCardStyle(id) {
+  const angle = ((id * 53) % 9) - 4; // -4..4deg
+  const delay = ((id * 37) % 40) / 10; // 0..3.9s
+  const hue = (id * 67) % 360;
+  return `--note-angle: ${angle}deg; --note-delay: ${delay}s; --note-hue: ${hue};`;
 }
 
 /* ---------- Render ---------- */
@@ -539,10 +631,15 @@ function noteItem(n) {
     thumbUrl = URL.createObjectURL(n.photo);
     noteThumbUrls.set(n.id, thumbUrl);
   }
+  let audioUrl = noteAudioUrls.get(n.id);
+  if (n.audio && !audioUrl) {
+    audioUrl = URL.createObjectURL(n.audio);
+    noteAudioUrls.set(n.id, audioUrl);
+  }
 
   return h(
     'div',
-    { class: 'card note-card' },
+    { class: 'card note-card', style: noteCardStyle(n.id) },
     h(
       'div',
       { class: 'task' },
@@ -560,6 +657,7 @@ function noteItem(n) {
     ),
     ...(n.text ? [h('p', { class: 'task-note' }, n.text)] : []),
     ...(thumbUrl ? [h('img', { class: 'note-photo', src: thumbUrl, alt: '' })] : []),
+    ...(audioUrl ? [h('audio', { class: 'note-audio', src: audioUrl, controls: 'true' })] : []),
   );
 }
 
