@@ -31,8 +31,9 @@ import {
 } from './device.js';
 import { showToast } from './toast.js';
 import { $, h, icon, iconButton, emptyState } from './dom.js';
-import { LOCALE, dayDiff, relativeDate } from './dates.js';
+import { LOCALE, dayDiff, relativeDate, todayISO } from './dates.js';
 import { initCalendar } from './calendar.js';
+import { initSchedule, todayStatus, formatRange, formatDuration } from './schedule.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
@@ -247,6 +248,7 @@ document.addEventListener('visibilitychange', () => {
   hiddenAt = null;
   renderToday();
   render();
+  schedule.render();
 });
 
 /* ---------- Password dialog ---------- */
@@ -879,6 +881,7 @@ function render() {
 
   renderTasksView();
   calendar.render();
+  renderTodayPanel();
 }
 
 function renderTasksView() {
@@ -944,6 +947,52 @@ function renderNotesView() {
     ...(sorted.length ? sorted.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]),
   );
 }
+
+const schedule = initSchedule({ onChange: () => renderTodayPanel() });
+
+// Inicio's "Hoy" strip: today's classes (with what's on now / next) and how
+// many tasks are due today.
+function renderTodayPanel() {
+  const statuses = todayStatus(schedule.todayBlocks(), new Date().getHours() * 60 + new Date().getMinutes());
+  $('today-classes').replaceChildren(
+    ...(statuses.length
+      ? statuses.map(({ block: b, status, minutesUntil, minutesLeft }) => {
+          const badge =
+            status === 'now'
+              ? h('span', { class: 'chip chip-ok' }, `Ahora · quedan ${formatDuration(minutesLeft)}`)
+              : status === 'next'
+                ? h('span', { class: 'chip chip-warn' }, `En ${formatDuration(minutesUntil)}`)
+                : null;
+          return h(
+            'a',
+            {
+              href: '#/horario',
+              class: `card today-class blk-${b.color ?? 'indigo'}${status === 'past' ? ' is-past' : ''}`,
+            },
+            h('span', { class: 'today-class-time' }, formatRange(b)),
+            h('span', { class: 'task-title' }, b.subject),
+            ...(b.place ? [h('span', { class: 'task-meta' }, b.place)] : []),
+            ...(badge ? [badge] : []),
+          );
+        })
+      : [emptyState('Hoy no tienes clases.', 'clock')]),
+  );
+
+  const today = todayISO();
+  const due = tasks.filter((t) => !t.done && t.due === today).length;
+  $('today-due-link').textContent = due
+    ? `${due} tarea${due === 1 ? '' : 's'} vence${due === 1 ? '' : 'n'} hoy →`
+    : 'Nada vence hoy →';
+}
+
+$('today-due-link').addEventListener('click', () => calendar.select(todayISO()));
+
+// "Ahora / En 20 min", the red now-line and the date roll over by themselves.
+setInterval(() => {
+  renderToday();
+  renderTodayPanel();
+  schedule.render();
+}, 60_000);
 
 const todayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -1042,10 +1091,20 @@ window.addEventListener('online', renderNetwork);
 window.addEventListener('offline', renderNetwork);
 
 async function init() {
-  db = await openDatabase();
+  db = await openDatabase({
+    onBlocked: () =>
+      showToast('Cierra las otras pestañas de Notux para terminar de actualizar la app.', { duration: 15000 }),
+    onVersionChange: () =>
+      showToast('Notux se actualizó en otra pestaña.', {
+        type: 'error',
+        duration: 60000,
+        action: { label: 'Recargar', onClick: () => location.reload() },
+      }),
+  });
   await migrateFromLocalStorage();
   tasks = await getAllTasks(db);
   notes = await getAllNotes(db);
+  await schedule.load(db);
 
   renderToday();
   renderNetwork();

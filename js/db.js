@@ -1,7 +1,10 @@
 const DB_NAME = 'notux-db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
-export function openDatabase() {
+// onBlocked: another tab still has an older version open, so the upgrade waits
+// until it closes. onVersionChange: a newer version (another tab, after an
+// update) wants to upgrade; this connection closes itself so it doesn't block it.
+export function openDatabase({ onBlocked, onVersionChange } = {}) {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -103,9 +106,23 @@ export function openDatabase() {
           };
         }
       }
+
+      // v4 -> v5: weekly schedule blocks (day 0–6 as in Date#getDay, start/end 'HH:MM').
+      if (oldVersion < 5) {
+        const schedule = db.createObjectStore('schedule', { keyPath: 'id', autoIncrement: true });
+        schedule.createIndex('byDay', 'day', { unique: false });
+      }
     };
 
-    request.onsuccess = (event) => resolve(event.target.result);
+    request.onblocked = () => onBlocked?.();
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      db.onversionchange = () => {
+        db.close();
+        onVersionChange?.();
+      };
+      resolve(db);
+    };
     request.onerror = (event) => reject(event.target.error);
   });
 }
@@ -281,6 +298,37 @@ export function replaceNotesEncryption(db, config, tasks) {
     const taskStore = tx.objectStore('tasks');
     for (const task of tasks) taskStore.put(task);
     tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/* ---------- Schedule ---------- */
+function run(db, storeName, mode, makeRequest) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, mode);
+    const request = makeRequest(tx.objectStore(storeName));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+export const createBlock = (db, block) => run(db, 'schedule', 'readwrite', (s) => s.add(block));
+export const updateBlock = (db, block) => run(db, 'schedule', 'readwrite', (s) => s.put(block));
+export const deleteBlock = (db, id) => run(db, 'schedule', 'readwrite', (s) => s.delete(id));
+export const getAllBlocks = (db) => run(db, 'schedule', 'readonly', (s) => s.getAll());
+
+// Adds several blocks in one transaction (a class on Mon + Wed is saved as two
+// blocks together, or not at all). Resolves with the new ids, in order.
+export function createBlocks(db, blocks) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('schedule', 'readwrite');
+    const store = tx.objectStore('schedule');
+    const ids = [];
+    blocks.forEach((b, i) => {
+      store.add(b).onsuccess = (e) => (ids[i] = e.target.result);
+    });
+    tx.oncomplete = () => resolve(ids);
     tx.onabort = () => reject(tx.error);
   });
 }

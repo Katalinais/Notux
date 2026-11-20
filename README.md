@@ -1,11 +1,12 @@
 # Notux
 
-PWA para organizar tareas, notas, un calendario y (próximamente) el horario semanal. Funciona sin conexión y guarda todo en el navegador: no hay servidor ni cuentas.
+PWA para organizar tareas, notas, un calendario y el horario semanal de clases. Funciona sin conexión y guarda todo en el navegador: no hay servidor ni cuentas.
 
 ## Funcionalidades
 
 - **Tareas**: título, fecha límite y prioridad; editar, eliminar con opción de deshacer, búsqueda, filtro por prioridad y marcar en bloque como hechas.
 - **Calendario**: vista de mes con las tareas en su fecha límite (títulos en pantallas anchas, puntos de color en el celular), lista del día seleccionado y alta rápida de tareas para ese día. Se navega con las flechas, Inicio/Fin y RePág/AvPág.
+- **Horario**: clases o actividades semanales con día, hora, lugar y color. Una clase se puede crear en varios días a la vez; avisa si se cruza con otra. Cuadrícula semanal en pantallas anchas y agenda por día en el celular. Inicio muestra las clases de hoy con lo que está pasando ahora y lo siguiente.
 - **Notas privadas**: cada tarea puede llevar una nota cifrada con AES-GCM (256 bits). La clave se deriva de una contraseña con PBKDF2-SHA256 y solo vive en memoria mientras las notas están desbloqueadas. Se bloquean solas tras 5 minutos sin actividad o 1 minuto con la app en segundo plano. Al cambiar la contraseña, todas las notas se vuelven a cifrar en una sola transacción.
 - **Notas libres**: editables, con foto (cámara o galería, comprimida a JPEG) y audio grabado con el micrófono. No se cifran.
 - **Offline e instalable**: service worker con caché del app shell y manifest para instalarla en el celular o el escritorio.
@@ -37,6 +38,7 @@ js/crypto.js     Primitivas: derivación de clave (PBKDF2) y AES-GCM
 js/vault.js      Contraseña de las notas privadas: crear, desbloquear, cambiar
 js/toast.js      Avisos no bloqueantes (reemplazan a alert())
 js/calendar.js   Vista de calendario
+js/schedule.js   Horario semanal: lógica (cruces, columnas, ahora/siguiente) y vista
 js/dates.js      Fechas como 'YYYY-MM-DD' locales, cuadrícula del mes, formatos es-CO
 js/dom.js        Ayudantes para crear elementos e íconos
 js/device.js     Cámara, galería y grabación de audio
@@ -46,13 +48,14 @@ manifest.json    Manifest de la PWA
 
 ## Datos
 
-Base IndexedDB `notux-db` (versión 4):
+Base IndexedDB `notux-db` (versión 5):
 
-| Store    | Contenido                                                                       |
-| -------- | ------------------------------------------------------------------------------- |
-| `tasks`  | Tareas. Índices `byPriority` y `byTitle` (único). Nota privada cifrada opcional |
-| `notes`  | Notas libres con `photo` y `audio` opcionales (Blob)                            |
-| `config` | `privateNotes`: sal y texto de verificación de la contraseña                    |
+| Store      | Contenido                                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `tasks`    | Tareas. Índices `byPriority` y `byTitle` (único). Nota privada cifrada opcional                                             |
+| `notes`    | Notas libres con `photo` y `audio` opcionales (Blob)                                                                        |
+| `schedule` | Bloques del horario: `day` (0 = domingo … 6 = sábado), `start`/`end` (`HH:MM`), `subject`, `place`, `color`. Índice `byDay` |
+| `config`   | `privateNotes`: sal y texto de verificación de la contraseña                                                                |
 
 Las migraciones de `openDatabase()` llevan los datos de versiones anteriores (nombres en español, localStorage) al esquema actual sin perderlos. Cualquier cambio de esquema debe subir `DB_VERSION` y agregar su paso de migración.
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v7';
+const CACHE_NAME = 'notux-v8';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const CORE_ASSETS = [
   './js/dom.js',
   './js/dates.js',
   './js/calendar.js',
+  './js/schedule.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
