@@ -30,13 +30,14 @@ import {
   startAudioRecording,
 } from './device.js';
 import { showToast } from './toast.js';
+import { $, h, icon, iconButton, emptyState } from './dom.js';
+import { LOCALE, dayDiff, relativeDate } from './dates.js';
+import { initCalendar } from './calendar.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const IDLE_LOCK_MS = 5 * 60 * 1000; // no taps or keys for this long → lock private notes
 const HIDDEN_LOCK_MS = 60 * 1000; // app in the background for this long → lock private notes
-const $ = (id) => document.getElementById(id);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -366,60 +367,6 @@ $('pwchange-form').addEventListener('submit', async (e) => {
 
 $('pwchange-dialog').addEventListener('close', () => $('pwchange-form').reset());
 $('pwchange-cancel').addEventListener('click', () => $('pwchange-dialog').close());
-
-/* ---------- DOM ---------- */
-function h(tag, props = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (key === 'class') node.className = value;
-    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
-    else node.setAttribute(key, value);
-  }
-  node.append(...children);
-  return node;
-}
-
-function icon(name, size = 20) {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', 'icon');
-  svg.setAttribute('width', size);
-  svg.setAttribute('height', size);
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS(SVG_NS, 'use');
-  use.setAttribute('href', `#i-${name}`);
-  svg.append(use);
-  return svg;
-}
-
-function iconButton(iconName, label, onclick, size = 18) {
-  return h(
-    'button',
-    { type: 'button', class: 'btn btn-ghost icon-btn', 'aria-label': label, onclick },
-    icon(iconName, size),
-  );
-}
-
-/* ---------- Dates ---------- */
-const weekdayFmt = new Intl.DateTimeFormat('es-CO', { weekday: 'long' });
-const shortDateFmt = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' });
-const todayFmt = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
-
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const parseDay = (s) => {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
-const dayDiff = (s) => Math.round((parseDay(s) - startOfDay(new Date())) / 86400000);
-
-function relativeDate(s) {
-  if (!s) return 'Sin fecha';
-  const n = dayDiff(s);
-  if (n === 0) return 'Hoy';
-  if (n === 1) return 'Mañana';
-  if (n === -1) return 'Ayer';
-  if (n > 1 && n < 7) return weekdayFmt.format(parseDay(s));
-  return shortDateFmt.format(parseDay(s));
-}
 
 /* ---------- Tasks: actions ---------- */
 async function addTask(title, due, priority, noteText) {
@@ -912,10 +859,6 @@ function taskItem(t) {
   );
 }
 
-function emptyState(message, iconName = 'check-circle') {
-  return h('p', { class: 'card empty' }, icon(iconName), message);
-}
-
 function render() {
   const pending = tasks
     .filter((t) => !t.done)
@@ -935,6 +878,7 @@ function render() {
   $('done').replaceChildren(...done.map(taskItem));
 
   renderTasksView();
+  calendar.render();
 }
 
 function renderTasksView() {
@@ -978,7 +922,7 @@ function noteItem(n) {
         'div',
         { class: 'task-body' },
         h('span', { class: 'task-title' }, n.title),
-        h('span', { class: 'task-meta' }, new Date(n.createdAt).toLocaleDateString('es-CO')),
+        h('span', { class: 'task-meta' }, new Date(n.createdAt).toLocaleDateString(LOCALE)),
       ),
       h(
         'div',
@@ -1001,6 +945,8 @@ function renderNotesView() {
   );
 }
 
+const todayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
+
 function renderToday() {
   $('today').textContent = todayFmt.format(new Date()).replace(',', '');
 }
@@ -1016,6 +962,29 @@ function renderNetwork() {
 }
 
 /* ---------- Startup ---------- */
+function notifyTaskSaveError(err) {
+  console.error('Could not save the task:', err);
+  showToast(
+    err.name === 'ConstraintError'
+      ? 'Ya existe una tarea con ese título.'
+      : 'No se pudo guardar la tarea. Intenta de nuevo.',
+    { type: 'error' },
+  );
+}
+
+const calendar = initCalendar({
+  getTasks: () => tasks,
+  renderTask: taskItem,
+  onAddTask: async (title, due, priority) => {
+    try {
+      await addTask(title, due, priority, null);
+    } catch (err) {
+      notifyTaskSaveError(err);
+      throw err;
+    }
+  },
+});
+
 $('task-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const titleInput = $('task-title');
@@ -1031,13 +1000,7 @@ $('task-form').addEventListener('submit', async (e) => {
   try {
     await addTask(title, due, priority, note || null);
   } catch (err) {
-    console.error('Could not save the task:', err);
-    showToast(
-      err.name === 'ConstraintError'
-        ? 'Ya existe una tarea con ese título.'
-        : 'No se pudo guardar la tarea. Intenta de nuevo.',
-      { type: 'error' },
-    );
+    notifyTaskSaveError(err);
     return;
   }
   e.target.reset();

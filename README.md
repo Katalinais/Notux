@@ -1,10 +1,11 @@
 # Notux
 
-PWA para organizar tareas, notas y (próximamente) el calendario y el horario semanal. Funciona sin conexión y guarda todo en el navegador: no hay servidor ni cuentas.
+PWA para organizar tareas, notas, un calendario y (próximamente) el horario semanal. Funciona sin conexión y guarda todo en el navegador: no hay servidor ni cuentas.
 
 ## Funcionalidades
 
 - **Tareas**: título, fecha límite y prioridad; editar, eliminar con opción de deshacer, búsqueda, filtro por prioridad y marcar en bloque como hechas.
+- **Calendario**: vista de mes con las tareas en su fecha límite (títulos en pantallas anchas, puntos de color en el celular), lista del día seleccionado y alta rápida de tareas para ese día. Se navega con las flechas, Inicio/Fin y RePág/AvPág.
 - **Notas privadas**: cada tarea puede llevar una nota cifrada con AES-GCM (256 bits). La clave se deriva de una contraseña con PBKDF2-SHA256 y solo vive en memoria mientras las notas están desbloqueadas. Se bloquean solas tras 5 minutos sin actividad o 1 minuto con la app en segundo plano. Al cambiar la contraseña, todas las notas se vuelven a cifrar en una sola transacción.
 - **Notas libres**: editables, con foto (cámara o galería, comprimida a JPEG) y audio grabado con el micrófono. No se cifran.
 - **Offline e instalable**: service worker con caché del app shell y manifest para instalarla en el celular o el escritorio.
@@ -35,6 +36,9 @@ js/db.js         IndexedDB: apertura, migraciones del esquema y CRUD
 js/crypto.js     Primitivas: derivación de clave (PBKDF2) y AES-GCM
 js/vault.js      Contraseña de las notas privadas: crear, desbloquear, cambiar
 js/toast.js      Avisos no bloqueantes (reemplazan a alert())
+js/calendar.js   Vista de calendario
+js/dates.js      Fechas como 'YYYY-MM-DD' locales, cuadrícula del mes, formatos es-CO
+js/dom.js        Ayudantes para crear elementos e íconos
 js/device.js     Cámara, galería y grabación de audio
 sw.js            Service worker y estrategias de caché
 manifest.json    Manifest de la PWA

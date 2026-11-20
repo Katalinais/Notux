@@ -34,6 +34,8 @@
     <symbol id="i-image" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 16l5-5 4 4 3-3 4 4"/><circle cx="8.5" cy="9" r="1.3"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4"/></symbol>
     <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-5-3a5 5 0 0 0 10 0M12 19v3"/></symbol>
   </svg>
 
@@ -160,10 +162,41 @@
               <h1>Calendario</h1>
               <p class="muted small">Tus tareas organizadas por fecha límite.</p>
             </div>
-            <div class="card placeholder">
-              <svg class="icon" width="40" height="40"><use href="#i-calendar"/></svg>
-              <h2>Próximamente</h2>
-              <p>Una vista de mes con tus tareas ubicadas en su fecha límite, para planear de un vistazo.</p>
+
+            <div class="cal-layout">
+              <div class="card cal">
+                <div class="cal-toolbar">
+                  <h2 id="cal-title" class="cal-title" aria-live="polite"></h2>
+                  <div class="cal-nav">
+                    <button type="button" id="cal-prev" class="btn btn-ghost icon-btn" aria-label="Mes anterior">
+                      <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-chevron-left"/></svg>
+                    </button>
+                    <button type="button" id="cal-today" class="btn btn-ghost btn-sm">Hoy</button>
+                    <button type="button" id="cal-next" class="btn btn-ghost icon-btn" aria-label="Mes siguiente">
+                      <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div id="cal-weekdays" class="cal-weekdays" aria-hidden="true"></div>
+                <div id="cal-grid" class="cal-grid" role="group" aria-label="Días del mes. Usa las flechas para moverte."></div>
+              </div>
+
+              <section class="cal-day" aria-labelledby="cal-day-title">
+                <h2 id="cal-day-title" class="cal-day-title"></h2>
+                <form id="cal-add-form" class="card form cal-add" autocomplete="off">
+                  <label class="label" for="cal-add-title">Nueva tarea para este día</label>
+                  <div class="cal-add-row">
+                    <input id="cal-add-title" class="input" type="text" maxlength="120" placeholder="¿Qué tienes que hacer?" required>
+                    <select id="cal-add-priority" class="input" aria-label="Prioridad">
+                      <option value="low">Baja</option>
+                      <option value="medium" selected>Media</option>
+                      <option value="high">Alta</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary">Agregar</button>
+                  </div>
+                </form>
+                <div id="cal-day-list" class="stack"></div>
+              </section>
             </div>
           </section>
 
