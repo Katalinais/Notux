@@ -260,3 +260,27 @@ export function getAllNotes(db) {
     request.onerror = () => reject(request.error);
   });
 }
+
+export function updateNote(db, note) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('notes', 'readwrite');
+    const request = tx.objectStore('notes').put(note);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// Saves the password config and the re-encrypted tasks in one transaction:
+// either every note moves to the new key together with the new salt, or nothing
+// changes. Resolves only once the transaction has committed.
+export function replaceNotesEncryption(db, config, tasks) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['config', 'tasks'], 'readwrite');
+    tx.objectStore('config').put(config);
+    const taskStore = tx.objectStore('tasks');
+    for (const task of tasks) taskStore.put(task);
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
+  });
+}

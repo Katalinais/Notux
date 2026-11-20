@@ -4,9 +4,9 @@ PWA para organizar tareas, notas y (próximamente) el calendario y el horario se
 
 ## Funcionalidades
 
-- **Tareas**: título, fecha límite y prioridad; búsqueda, filtro por prioridad y marcar en bloque como hechas.
-- **Notas privadas**: cada tarea puede llevar una nota cifrada con AES-GCM (256 bits). La clave se deriva de una contraseña con PBKDF2-SHA256 y solo vive en memoria mientras las notas están desbloqueadas.
-- **Notas libres**: con foto (cámara o galería, comprimida a JPEG) y audio grabado con el micrófono. No se cifran.
+- **Tareas**: título, fecha límite y prioridad; editar, eliminar con opción de deshacer, búsqueda, filtro por prioridad y marcar en bloque como hechas.
+- **Notas privadas**: cada tarea puede llevar una nota cifrada con AES-GCM (256 bits). La clave se deriva de una contraseña con PBKDF2-SHA256 y solo vive en memoria mientras las notas están desbloqueadas. Se bloquean solas tras 5 minutos sin actividad o 1 minuto con la app en segundo plano. Al cambiar la contraseña, todas las notas se vuelven a cifrar en una sola transacción.
+- **Notas libres**: editables, con foto (cámara o galería, comprimida a JPEG) y audio grabado con el micrófono. No se cifran.
 - **Offline e instalable**: service worker con caché del app shell y manifest para instalarla en el celular o el escritorio.
 
 ## Desarrollo
@@ -32,7 +32,9 @@ index.html       Vistas (inicio, tareas, calendario, horario, notas) y diálogos
 css/style.css    Estilos, con modo claro/oscuro
 js/app.js        Estado, rutas (#/vista), renderizado y eventos
 js/db.js         IndexedDB: apertura, migraciones del esquema y CRUD
-js/crypto.js     Derivación de clave y cifrado de las notas privadas
+js/crypto.js     Primitivas: derivación de clave (PBKDF2) y AES-GCM
+js/vault.js      Contraseña de las notas privadas: crear, desbloquear, cambiar
+js/toast.js      Avisos no bloqueantes (reemplazan a alert())
 js/device.js     Cámara, galería y grabación de audio
 sw.js            Service worker y estrategias de caché
 manifest.json    Manifest de la PWA

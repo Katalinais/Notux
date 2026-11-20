@@ -6,13 +6,20 @@ import {
   getAllTasks,
   countTasks,
   markTasksDoneByPriority,
-  saveConfig,
-  getConfig,
   createNote,
+  updateNote,
   deleteNote,
   getAllNotes,
 } from './db.js';
-import { generateSalt, deriveKeyFromPassword, encryptText, decryptText } from './crypto.js';
+import {
+  isPasswordConfigured,
+  createPassword,
+  unlockWithPassword,
+  changePassword,
+  encryptNote,
+  decryptNote,
+  WrongPasswordError,
+} from './vault.js';
 import {
   isCameraSupported,
   openCamera,
@@ -22,12 +29,13 @@ import {
   isMicrophoneSupported,
   startAudioRecording,
 } from './device.js';
+import { showToast } from './toast.js';
 
 const TASKS_KEY = 'notux.tasks';
-const NOTES_CONFIG_ID = 'privateNotes';
-const NOTES_CHECK_TEXT = 'notux-verificacion'; // internal sentinel only, never shown — keep stable across renames
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const IDLE_LOCK_MS = 5 * 60 * 1000; // no taps or keys for this long → lock private notes
+const HIDDEN_LOCK_MS = 60 * 1000; // app in the background for this long → lock private notes
 const $ = (id) => document.getElementById(id);
 
 if ('serviceWorker' in navigator) {
@@ -68,12 +76,15 @@ let tasks = [];
 let notes = [];
 let notesKey = null; // CryptoKey held in memory; null = private notes locked
 let revealedNoteId = null;
-const decryptedNotes = new Map();
+const decryptedNotes = new Map(); // task.id -> plaintext, cleared on lock
+
+let editingTask = null; // { id, noteLoaded } while the edit dialog is open
+let editingNoteId = null; // id of the free-form note loaded in the note form, or null
 
 let cameraStream = null;
 let capturedPhoto = null; // Blob | null, for the note currently being composed
 let capturedPhotoUrl = null; // object URL for its preview, revoked on change/reset
-const noteThumbUrls = new Map(); // note.id -> object URL, revoked when the note is removed or re-rendered
+const noteThumbUrls = new Map(); // note.id -> object URL, revoked when the note is removed or changed
 
 let activeRecording = null; // controller from startAudioRecording(), null when not recording
 let recordingTimerId = null;
@@ -132,51 +143,42 @@ async function migrateFromLocalStorage() {
   console.log(`notux: migrated ${oldTasks.length} task(s) from localStorage to IndexedDB`);
 }
 
-/* ---------- Private notes: password and key ---------- */
-async function isPasswordConfigured() {
-  return !!(await getConfig(db, NOTES_CONFIG_ID));
+/* ---------- Private notes: lock state ---------- */
+async function passwordMode() {
+  return (await isPasswordConfigured(db)) ? 'unlock' : 'create';
 }
 
-async function createPassword(password) {
-  const salt = generateSalt();
-  const key = await deriveKeyFromPassword(password, salt);
-  const verification = await encryptText(key, NOTES_CHECK_TEXT);
-  await saveConfig(db, { id: NOTES_CONFIG_ID, salt, verification });
-  notesKey = key;
+async function requestUnlock(onSuccess) {
+  openPasswordDialog({ mode: await passwordMode(), onSuccess });
 }
 
-async function unlock(password) {
-  const config = await getConfig(db, NOTES_CONFIG_ID);
-  if (!config) throw new Error('No password configured');
-  const key = await deriveKeyFromPassword(password, config.salt);
-  // If the password is wrong, decrypt() rejects the promise (AES-GCM detects the wrong key).
-  const text = await decryptText(key, config.verification);
-  if (text !== NOTES_CHECK_TEXT) throw new Error('Incorrect password');
-  notesKey = key;
+// Everything that shows or edits plaintext follows the lock state from here.
+function refreshLockedUi() {
+  updateLockState();
+  updateNoteFormState();
+  loadEditorNote();
+  render();
 }
 
-function lock() {
+function lock({ notice } = {}) {
+  if (!notesKey) return;
   notesKey = null;
   revealedNoteId = null;
   decryptedNotes.clear();
-  updateLockState();
-  updateNoteFormState();
-  render();
+  $('task-note').value = ''; // a half-typed private note shouldn't outlive the lock
+  refreshLockedUi();
+  if (notice) showToast(notice);
 }
 
 async function revealNote(t) {
   if (decryptedNotes.has(t.id)) return;
-  const text = await decryptText(notesKey, { ciphertext: t.encryptedNote, iv: t.noteIv });
-  decryptedNotes.set(t.id, text);
+  decryptedNotes.set(t.id, await decryptNote(notesKey, t));
 }
 
 function toggleNote(t) {
   return async () => {
     if (!notesKey) {
-      openPasswordDialog({
-        mode: (await isPasswordConfigured()) ? 'unlock' : 'create',
-        onSuccess: toggleNote(t),
-      });
+      requestUnlock(toggleNote(t));
       return;
     }
     if (revealedNoteId === t.id) {
@@ -190,10 +192,61 @@ function toggleNote(t) {
       render();
     } catch (err) {
       console.error('Could not decrypt the note:', err);
-      alert('No se pudo descifrar esta nota.');
+      showToast('No se pudo descifrar esta nota.', { type: 'error' });
     }
   };
 }
+
+async function updateLockState() {
+  const configured = notesKey ? true : await isPasswordConfigured(db);
+  const btn = $('notes-lock');
+  btn.className = `chip ${notesKey ? 'chip-ok' : 'chip-warn'}`;
+  btn.replaceChildren(icon(notesKey ? 'unlock' : 'lock', 14), configured ? 'Notas privadas' : 'Configurar notas');
+  btn.title = notesKey ? 'Bloquear notas privadas' : configured ? 'Desbloquear notas privadas' : 'Crear una contraseña';
+  $('btn-change-password').hidden = !configured;
+}
+
+function updateNoteFormState() {
+  $('task-note').disabled = !notesKey;
+  $('task-note-hint').hidden = !!notesKey;
+}
+
+$('notes-lock').addEventListener('click', () => {
+  if (notesKey) lock();
+  else requestUnlock();
+});
+
+$('task-note-unlock').addEventListener('click', () => requestUnlock());
+
+/* ---------- Private notes: auto-lock ---------- */
+let lastActivity = Date.now();
+let hiddenLockTimer = null;
+let hiddenAt = null;
+
+const markActivity = () => (lastActivity = Date.now());
+for (const type of ['pointerdown', 'keydown', 'input']) {
+  document.addEventListener(type, markActivity, { capture: true, passive: true });
+}
+
+setInterval(() => {
+  if (notesKey && !document.hidden && Date.now() - lastActivity > IDLE_LOCK_MS) {
+    lock({ notice: 'Notas privadas bloqueadas por inactividad.' });
+  }
+}, 15_000);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    hiddenLockTimer = setTimeout(() => lock(), HIDDEN_LOCK_MS);
+    return;
+  }
+  clearTimeout(hiddenLockTimer);
+  // Background timers can be throttled, so check the elapsed time on return too.
+  if (notesKey && hiddenAt && Date.now() - hiddenAt > HIDDEN_LOCK_MS) lock();
+  hiddenAt = null;
+  renderToday();
+  render();
+});
 
 /* ---------- Password dialog ---------- */
 // One submit listener for the dialog's whole lifetime. Each open only swaps the
@@ -230,10 +283,12 @@ $('pw-form').addEventListener('submit', async (e) => {
   pwBusy = true;
   try {
     // Re-check: another tab may have created the password since the dialog opened.
-    if (mode === 'create' && !(await isPasswordConfigured())) await createPassword(password);
-    else await unlock(password);
+    notesKey =
+      mode === 'create' && !(await isPasswordConfigured(db))
+        ? await createPassword(db, password)
+        : await unlockWithPassword(db, password);
   } catch (err) {
-    console.error(err);
+    if (!(err instanceof WrongPasswordError)) console.error(err);
     error.textContent = 'Contraseña incorrecta.';
     error.hidden = false;
     input.focus();
@@ -245,8 +300,8 @@ $('pw-form').addEventListener('submit', async (e) => {
 
   pwRequest = null;
   $('pw-dialog').close();
-  updateLockState();
-  updateNoteFormState();
+  markActivity();
+  refreshLockedUi();
   await onSuccess?.();
 });
 
@@ -257,35 +312,60 @@ $('pw-dialog').addEventListener('close', () => {
 
 $('pw-cancel').addEventListener('click', () => $('pw-dialog').close());
 
-function updateLockState() {
-  const btn = $('notes-lock');
-  if (notesKey) {
-    btn.className = 'chip chip-ok';
-    btn.replaceChildren(icon('unlock', 14), 'Notas privadas');
-    return;
-  }
-  isPasswordConfigured().then((configured) => {
-    btn.className = 'chip chip-warn';
-    btn.replaceChildren(icon('lock', 14), configured ? 'Notas privadas' : 'Configurar notas');
-  });
-}
+/* ---------- Change password dialog ---------- */
+let pwChangeBusy = false;
 
-function updateNoteFormState() {
-  $('task-note').disabled = !notesKey;
-  $('task-note-hint').hidden = !!notesKey;
-}
-
-$('notes-lock').addEventListener('click', async () => {
-  if (notesKey) {
-    lock();
-    return;
-  }
-  openPasswordDialog({ mode: (await isPasswordConfigured()) ? 'unlock' : 'create' });
+$('btn-change-password').addEventListener('click', () => {
+  $('pwchange-form').reset();
+  $('pwchange-error').hidden = true;
+  $('pwchange-dialog').showModal();
 });
 
-$('task-note-unlock').addEventListener('click', async () => {
-  openPasswordDialog({ mode: (await isPasswordConfigured()) ? 'unlock' : 'create' });
+$('pwchange-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (pwChangeBusy) return;
+  const current = $('pwchange-current').value;
+  const next = $('pwchange-new').value;
+  const error = $('pwchange-error');
+
+  if (next !== $('pwchange-confirm').value) {
+    error.textContent = 'Las contraseñas nuevas no coinciden.';
+    error.hidden = false;
+    $('pwchange-confirm').focus();
+    return;
+  }
+
+  pwChangeBusy = true;
+  const submit = $('pwchange-submit');
+  submit.disabled = true;
+  submit.textContent = 'Cifrando…';
+  try {
+    notesKey = await changePassword(db, current, next);
+    tasks = await getAllTasks(db); // new ciphertexts and IVs
+  } catch (err) {
+    if (err instanceof WrongPasswordError) {
+      error.textContent = 'La contraseña actual no es correcta.';
+      $('pwchange-current').select();
+    } else {
+      console.error('Could not change the password:', err);
+      error.textContent = 'No se pudo cambiar la contraseña. Tus notas siguen con la contraseña anterior.';
+    }
+    error.hidden = false;
+    return;
+  } finally {
+    pwChangeBusy = false;
+    submit.disabled = false;
+    submit.textContent = 'Cambiar';
+  }
+
+  $('pwchange-dialog').close();
+  markActivity();
+  refreshLockedUi();
+  showToast('Contraseña cambiada. Tus notas privadas se volvieron a cifrar.');
 });
+
+$('pwchange-dialog').addEventListener('close', () => $('pwchange-form').reset());
+$('pwchange-cancel').addEventListener('click', () => $('pwchange-dialog').close());
 
 /* ---------- DOM ---------- */
 function h(tag, props = {}, ...children) {
@@ -311,6 +391,14 @@ function icon(name, size = 20) {
   return svg;
 }
 
+function iconButton(iconName, label, onclick, size = 18) {
+  return h(
+    'button',
+    { type: 'button', class: 'btn btn-ghost icon-btn', 'aria-label': label, onclick },
+    icon(iconName, size),
+  );
+}
+
 /* ---------- Dates ---------- */
 const weekdayFmt = new Intl.DateTimeFormat('es-CO', { weekday: 'long' });
 const shortDateFmt = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' });
@@ -333,7 +421,7 @@ function relativeDate(s) {
   return shortDateFmt.format(parseDay(s));
 }
 
-/* ---------- Actions ---------- */
+/* ---------- Tasks: actions ---------- */
 async function addTask(title, due, priority, noteText) {
   const task = {
     title,
@@ -347,9 +435,7 @@ async function addTask(title, due, priority, noteText) {
   };
   if (noteText) {
     if (!notesKey) throw new Error('Private notes are locked');
-    const { ciphertext, iv } = await encryptText(notesKey, noteText);
-    task.encryptedNote = ciphertext;
-    task.noteIv = iv;
+    Object.assign(task, await encryptNote(notesKey, noteText));
   }
   const id = await createTask(db, task);
   tasks.push({ ...task, id });
@@ -360,20 +446,162 @@ async function toggleTask(id) {
   const task = tasks.find((t) => t.id === id);
   if (!task) return;
   const updated = { ...task, done: !task.done, completedAt: !task.done ? new Date().toISOString() : null };
-  await updateTask(db, updated);
+  try {
+    await updateTask(db, updated);
+  } catch (err) {
+    console.error('Could not update the task:', err);
+    showToast('No se pudo actualizar la tarea.', { type: 'error' });
+    return;
+  }
   Object.assign(task, updated);
   render();
 }
 
 async function removeTask(id) {
-  await deleteTask(db, id);
+  const task = tasks.find((t) => t.id === id);
+  if (!task) return;
+  try {
+    await deleteTask(db, id);
+  } catch (err) {
+    console.error('Could not delete the task:', err);
+    showToast('No se pudo eliminar la tarea.', { type: 'error' });
+    return;
+  }
   tasks = tasks.filter((t) => t.id !== id);
   decryptedNotes.delete(id);
+  if (revealedNoteId === id) revealedNoteId = null;
+  render();
+  showToast(`Tarea «${task.title}» eliminada.`, { action: { label: 'Deshacer', onClick: () => restoreTask(task) } });
+}
+
+async function restoreTask(task) {
+  try {
+    await createTask(db, task); // same id: it comes back exactly where it was
+  } catch (err) {
+    console.error('Could not restore the task:', err);
+    showToast(
+      err.name === 'ConstraintError'
+        ? 'No se pudo restaurar: ya existe otra tarea con ese título.'
+        : 'No se pudo restaurar la tarea.',
+      { type: 'error' },
+    );
+    return;
+  }
+  tasks.push(task);
   render();
 }
 
+/* ---------- Tasks: edit dialog ---------- */
+async function openTaskEditor(id) {
+  const t = tasks.find((x) => x.id === id);
+  if (!t || $('task-dialog').open) return;
+  editingTask = { id, noteLoaded: false };
+  $('task-edit-title').value = t.title;
+  $('task-edit-due').value = t.due ?? '';
+  $('task-edit-priority').value = t.priority ?? 'medium';
+  $('task-edit-error').hidden = true;
+  await loadEditorNote();
+  $('task-dialog').showModal();
+}
+
+// Fills the editor's private-note field according to the lock state. While
+// locked the field stays empty and disabled, and saving keeps the existing
+// ciphertext untouched instead of treating the empty field as "remove note".
+async function loadEditorNote() {
+  if (!editingTask) return;
+  const t = tasks.find((x) => x.id === editingTask.id);
+  const hasNote = !!t?.encryptedNote;
+  const textarea = $('task-edit-note');
+  editingTask.noteLoaded = false;
+  textarea.value = '';
+
+  let failed = false;
+  if (t && notesKey) {
+    try {
+      if (hasNote) {
+        await revealNote(t);
+        textarea.value = decryptedNotes.get(t.id);
+      }
+      editingTask.noteLoaded = true;
+    } catch (err) {
+      console.error('Could not decrypt the note:', err);
+      failed = true;
+    }
+  }
+
+  textarea.disabled = !editingTask.noteLoaded;
+  textarea.placeholder = editingTask.noteLoaded ? 'Se cifra antes de guardarse. Déjala vacía para quitarla.' : '';
+  $('task-edit-note-hint').hidden = editingTask.noteLoaded;
+  $('task-edit-note-unlock').hidden = !!notesKey;
+  $('task-edit-note-hint-text').textContent = failed
+    ? 'No se pudo descifrar la nota; se conservará tal cual.'
+    : hasNote
+      ? 'Esta tarea tiene una nota privada. Desbloquea para verla o editarla.'
+      : 'Desbloquea las notas privadas para agregar una.';
+}
+
+let savingTask = false;
+
+$('task-edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!editingTask || savingTask) return;
+  const t = tasks.find((x) => x.id === editingTask.id);
+  if (!t) {
+    $('task-dialog').close();
+    return;
+  }
+  const titleInput = $('task-edit-title');
+  const title = titleInput.value.trim();
+  if (!title) {
+    titleInput.focus();
+    return;
+  }
+
+  const updated = { ...t, title, due: $('task-edit-due').value || null, priority: $('task-edit-priority').value };
+  let noteText = null; // null = note not touched
+  savingTask = true;
+  try {
+    if (editingTask.noteLoaded && notesKey) {
+      const text = $('task-edit-note').value.trim();
+      const previous = t.encryptedNote ? decryptedNotes.get(t.id) : '';
+      if (text !== previous) {
+        noteText = text;
+        Object.assign(updated, text ? await encryptNote(notesKey, text) : { encryptedNote: null, noteIv: null });
+      }
+    }
+    await updateTask(db, updated);
+  } catch (err) {
+    console.error('Could not save the task:', err);
+    const error = $('task-edit-error');
+    error.textContent =
+      err.name === 'ConstraintError' ? 'Ya existe otra tarea con ese título.' : 'No se pudo guardar. Intenta de nuevo.';
+    error.hidden = false;
+    if (err.name === 'ConstraintError') titleInput.focus();
+    return;
+  } finally {
+    savingTask = false;
+  }
+
+  Object.assign(t, updated);
+  if (noteText) decryptedNotes.set(t.id, noteText);
+  else if (noteText === '') {
+    decryptedNotes.delete(t.id);
+    if (revealedNoteId === t.id) revealedNoteId = null;
+  }
+  $('task-dialog').close();
+  render();
+  showToast('Tarea actualizada.');
+});
+
+$('task-dialog').addEventListener('close', () => {
+  editingTask = null;
+  $('task-edit-note').value = '';
+});
+$('task-edit-cancel').addEventListener('click', () => $('task-dialog').close());
+$('task-edit-note-unlock').addEventListener('click', () => requestUnlock());
+
 /* ---------- Free-form notes: camera, gallery, CRUD ---------- */
-// These notes are separate from the encrypted notaPrivada field on tasks — they're
+// These notes are separate from the encrypted private note on tasks — they're
 // plain (unencrypted) and can carry a photo, so they don't belong behind the password lock.
 if (!isCameraSupported()) {
   $('note-camera-btn').hidden = true;
@@ -389,14 +617,20 @@ function setNotePhoto(blob) {
   const img = $('note-photo-preview');
   img.src = capturedPhotoUrl;
   img.hidden = false;
+  $('note-photo-remove').hidden = false;
 }
 
 function resetNotePhoto() {
   capturedPhoto = null;
   if (capturedPhotoUrl) URL.revokeObjectURL(capturedPhotoUrl);
   capturedPhotoUrl = null;
-  $('note-photo-preview').hidden = true;
+  const img = $('note-photo-preview');
+  img.hidden = true;
+  img.removeAttribute('src');
+  $('note-photo-remove').hidden = true;
 }
+
+$('note-photo-remove').addEventListener('click', resetNotePhoto);
 
 $('note-camera-btn').addEventListener('click', async () => {
   try {
@@ -405,7 +639,9 @@ $('note-camera-btn').addEventListener('click', async () => {
     $('camera-dialog').showModal();
   } catch (err) {
     console.error('Could not open the camera:', err);
-    alert('No se pudo abrir la cámara. Revisa los permisos en el candado de la barra de direcciones.');
+    showToast('No se pudo abrir la cámara. Revisa los permisos en el candado de la barra de direcciones.', {
+      type: 'error',
+    });
   }
 });
 
@@ -432,8 +668,12 @@ $('note-gallery-btn').addEventListener('click', () => $('note-gallery-input').cl
 $('note-gallery-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  const blob = await processGalleryPhoto(file);
-  setNotePhoto(blob);
+  try {
+    setNotePhoto(await processGalleryPhoto(file));
+  } catch (err) {
+    console.error('Could not read the image:', err);
+    showToast('No se pudo leer esa imagen.', { type: 'error' });
+  }
   e.target.value = ''; // allow picking the same file again later
 });
 
@@ -465,9 +705,17 @@ function updateRecordButton(recording) {
     return;
   }
   const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
-  const mm = String(Math.floor(seconds / 60)).padStart(1, '0');
+  const mm = String(Math.floor(seconds / 60));
   const ss = String(seconds % 60).padStart(2, '0');
   btn.replaceChildren(icon('mic', 18), ` Detener (${mm}:${ss})`);
+}
+
+function discardRecording() {
+  if (!activeRecording) return;
+  clearInterval(recordingTimerId);
+  activeRecording.cancel();
+  activeRecording = null;
+  updateRecordButton(false);
 }
 
 $('note-audio-btn').addEventListener('click', async () => {
@@ -487,16 +735,63 @@ $('note-audio-btn').addEventListener('click', async () => {
     recordingTimerId = setInterval(() => updateRecordButton(true), 500);
   } catch (err) {
     console.error('Could not start recording:', err);
-    alert('No se pudo grabar audio. Revisa los permisos del micrófono.');
+    showToast('No se pudo grabar audio. Revisa los permisos del micrófono.', { type: 'error' });
   }
 });
 
 $('note-audio-remove').addEventListener('click', resetNoteAudio);
 
+function forgetNoteMedia(id) {
+  for (const urls of [noteThumbUrls, noteAudioUrls]) {
+    const url = urls.get(id);
+    if (url) {
+      URL.revokeObjectURL(url);
+      urls.delete(id);
+    }
+  }
+}
+
+function resetNoteForm() {
+  discardRecording();
+  editingNoteId = null;
+  $('note-form').reset();
+  resetNotePhoto();
+  resetNoteAudio();
+  $('note-edit-banner').hidden = true;
+  $('note-submit').textContent = 'Guardar nota';
+}
+
+// Editing reuses the creation form, so camera, gallery and recording work the same.
+function startNoteEdit(id) {
+  const n = notes.find((x) => x.id === id);
+  if (!n) return;
+  discardRecording();
+  editingNoteId = id;
+  $('note-title').value = n.title;
+  $('note-text').value = n.text ?? '';
+  if (n.photo) setNotePhoto(n.photo);
+  else resetNotePhoto();
+  if (n.audio) setNoteAudio(n.audio);
+  else resetNoteAudio();
+  $('note-edit-banner').hidden = false;
+  $('note-submit').textContent = 'Guardar cambios';
+  renderNotesView();
+  $('note-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('note-title').focus({ preventScroll: true });
+}
+
+$('note-edit-cancel').addEventListener('click', () => {
+  resetNoteForm();
+  renderNotesView();
+});
+
+let savingNote = false;
+
 $('note-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (savingNote) return;
   if (activeRecording) {
-    alert('Detén la grabación antes de guardar la nota.');
+    showToast('Detén la grabación antes de guardar la nota.');
     return;
   }
   const titleInput = $('note-title');
@@ -505,36 +800,59 @@ $('note-form').addEventListener('submit', async (e) => {
     titleInput.focus();
     return;
   }
-  const text = $('note-text').value.trim();
-  const note = { title, text, photo: capturedPhoto, audio: capturedAudio, createdAt: new Date().toISOString() };
+  const fields = { title, text: $('note-text').value.trim(), photo: capturedPhoto, audio: capturedAudio };
+  const existing = editingNoteId !== null ? notes.find((n) => n.id === editingNoteId) : null;
 
+  savingNote = true;
   try {
-    const id = await createNote(db, note);
-    notes.unshift({ ...note, id });
+    if (existing) {
+      const updated = { ...existing, ...fields, updatedAt: new Date().toISOString() };
+      await updateNote(db, updated);
+      notes = notes.map((n) => (n.id === updated.id ? updated : n));
+      forgetNoteMedia(updated.id); // photo/audio may have changed
+    } else {
+      const note = { ...fields, createdAt: new Date().toISOString() };
+      const id = await createNote(db, note);
+      notes.push({ ...note, id });
+    }
   } catch (err) {
     console.error('Could not save the note:', err);
-    alert('No se pudo guardar la nota. Intenta de nuevo.');
+    showToast('No se pudo guardar la nota. Intenta de nuevo.', { type: 'error' });
     return;
+  } finally {
+    savingNote = false;
   }
-  e.target.reset();
-  resetNotePhoto();
-  resetNoteAudio();
+  resetNoteForm();
   renderNotesView();
+  if (existing) showToast('Nota actualizada.');
 });
 
 async function removeNote(id) {
-  await deleteNote(db, id);
+  const note = notes.find((n) => n.id === id);
+  if (!note) return;
+  try {
+    await deleteNote(db, id);
+  } catch (err) {
+    console.error('Could not delete the note:', err);
+    showToast('No se pudo eliminar la nota.', { type: 'error' });
+    return;
+  }
   notes = notes.filter((n) => n.id !== id);
-  const thumbUrl = noteThumbUrls.get(id);
-  if (thumbUrl) {
-    URL.revokeObjectURL(thumbUrl);
-    noteThumbUrls.delete(id);
+  forgetNoteMedia(id);
+  if (editingNoteId === id) resetNoteForm();
+  renderNotesView();
+  showToast(`Nota «${note.title}» eliminada.`, { action: { label: 'Deshacer', onClick: () => restoreNote(note) } });
+}
+
+async function restoreNote(note) {
+  try {
+    await createNote(db, note); // same id, same photo/audio blobs
+  } catch (err) {
+    console.error('Could not restore the note:', err);
+    showToast('No se pudo restaurar la nota.', { type: 'error' });
+    return;
   }
-  const audioUrl = noteAudioUrls.get(id);
-  if (audioUrl) {
-    URL.revokeObjectURL(audioUrl);
-    noteAudioUrls.delete(id);
-  }
+  notes.push(note);
   renderNotesView();
 }
 
@@ -575,29 +893,14 @@ function taskItem(t) {
         `${relativeDate(t.due)} · ${PRIORITY_LABEL[t.priority] ?? 'Media'}`,
       ),
     ),
-    ...(hasNote
-      ? [
-          h(
-            'button',
-            {
-              type: 'button',
-              class: 'btn btn-ghost icon-btn',
-              'aria-label': noteVisible ? 'Ocultar nota privada' : 'Ver nota privada',
-              onclick: toggleNote(t),
-            },
-            icon('note', 18),
-          ),
-        ]
-      : []),
     h(
-      'button',
-      {
-        type: 'button',
-        class: 'btn btn-ghost icon-btn',
-        'aria-label': 'Eliminar tarea',
-        onclick: () => removeTask(t.id),
-      },
-      icon('trash'),
+      'div',
+      { class: 'task-actions' },
+      ...(hasNote
+        ? [iconButton('note', noteVisible ? 'Ocultar nota privada' : 'Ver nota privada', toggleNote(t))]
+        : []),
+      iconButton('edit', `Editar tarea «${t.title}»`, () => openTaskEditor(t.id)),
+      iconButton('trash', `Eliminar tarea «${t.title}»`, () => removeTask(t.id), 20),
     ),
   );
 
@@ -667,7 +970,7 @@ function noteItem(n) {
 
   return h(
     'div',
-    { class: 'card note-card', style: noteCardStyle(n.id) },
+    { class: `card note-card${editingNoteId === n.id ? ' is-editing' : ''}`, style: noteCardStyle(n.id) },
     h(
       'div',
       { class: 'task' },
@@ -678,14 +981,10 @@ function noteItem(n) {
         h('span', { class: 'task-meta' }, new Date(n.createdAt).toLocaleDateString('es-CO')),
       ),
       h(
-        'button',
-        {
-          type: 'button',
-          class: 'btn btn-ghost icon-btn',
-          'aria-label': 'Eliminar nota',
-          onclick: () => removeNote(n.id),
-        },
-        icon('trash'),
+        'div',
+        { class: 'task-actions' },
+        iconButton('edit', `Editar nota «${n.title}»`, () => startNoteEdit(n.id)),
+        iconButton('trash', `Eliminar nota «${n.title}»`, () => removeNote(n.id), 20),
       ),
     ),
     ...(n.text ? [h('p', { class: 'task-note' }, n.text)] : []),
@@ -695,8 +994,10 @@ function noteItem(n) {
 }
 
 function renderNotesView() {
+  // Newest first, whatever order they were loaded, created or restored in.
+  const sorted = [...notes].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   $('notes-list').replaceChildren(
-    ...(notes.length ? notes.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]),
+    ...(sorted.length ? sorted.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]),
   );
 }
 
@@ -708,7 +1009,10 @@ function renderNetwork() {
   const online = navigator.onLine;
   const chip = $('net');
   chip.className = `chip ${online ? 'chip-ok' : 'chip-warn'}`;
-  chip.replaceChildren(icon(online ? 'wifi' : 'wifi-off', 14), online ? 'En línea' : 'Sin conexión');
+  chip.replaceChildren(
+    icon(online ? 'wifi' : 'wifi-off', 14),
+    h('span', { class: 'chip-label' }, online ? 'En línea' : 'Sin conexión'),
+  );
 }
 
 /* ---------- Startup ---------- */
@@ -728,10 +1032,11 @@ $('task-form').addEventListener('submit', async (e) => {
     await addTask(title, due, priority, note || null);
   } catch (err) {
     console.error('Could not save the task:', err);
-    alert(
+    showToast(
       err.name === 'ConstraintError'
         ? 'Ya existe una tarea con ese título.'
         : 'No se pudo guardar la tarea. Intenta de nuevo.',
+      { type: 'error' },
     );
     return;
   }
@@ -759,20 +1064,19 @@ $('tasks-bulk-done').addEventListener('click', async () => {
       tasks = await getAllTasks(db);
       render();
     }
+    showToast(
+      updated > 0
+        ? `${updated} tarea${updated === 1 ? '' : 's'} marcada${updated === 1 ? '' : 's'} como hecha${updated === 1 ? '' : 's'}.`
+        : 'No había tareas pendientes con esa prioridad.',
+    );
   } catch (err) {
     console.error('Could not bulk-update tasks:', err);
-    alert('No se pudieron marcar las tareas.');
+    showToast('No se pudieron marcar las tareas.', { type: 'error' });
   }
 });
 
 window.addEventListener('online', renderNetwork);
 window.addEventListener('offline', renderNetwork);
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    renderToday();
-    render();
-  }
-});
 
 async function init() {
   db = await openDatabase();
@@ -790,4 +1094,7 @@ async function init() {
 }
 
 navigate();
-init().catch((err) => console.error('Could not start Notux:', err));
+init().catch((err) => {
+  console.error('Could not start Notux:', err);
+  showToast('No se pudo abrir la base de datos de Notux. Recarga la página.', { type: 'error', duration: 15000 });
+});
