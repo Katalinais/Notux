@@ -196,45 +196,64 @@ function toggleNote(t) {
 }
 
 /* ---------- Password dialog ---------- */
+// One submit listener for the dialog's whole lifetime. Each open only swaps the
+// request below; a per-open listener would pile up whenever the dialog was
+// cancelled, and in 'create' mode two stacked handlers derived two different
+// keys, so notes could end up encrypted with a key that no longer matched the
+// stored salt.
+let pwRequest = null; // { mode, onSuccess } while the dialog is open
+let pwBusy = false; // PBKDF2 takes a moment; ignore repeated submits meanwhile
+
 function openPasswordDialog({ mode, onSuccess }) {
   const dialog = $('pw-dialog');
-  const form = $('pw-form');
-  const input = $('pw-input');
-  const error = $('pw-error');
+  if (dialog.open) return;
+  pwRequest = { mode, onSuccess };
 
   $('pw-title').textContent = mode === 'create' ? 'Crea una contraseña' : 'Desbloquea tus notas privadas';
   $('pw-desc').textContent =
     mode === 'create'
       ? 'Se usará para cifrar tus notas privadas. Si la olvidas, esas notas no se podrán recuperar.'
       : 'Ingresa la contraseña que usaste para cifrar tus notas privadas.';
-  error.hidden = true;
-  input.value = '';
-
-  const onSubmit = async (e) => {
-    e.preventDefault();
-    const password = input.value;
-    if (!password) return;
-    try {
-      if (mode === 'create') await createPassword(password);
-      else await unlock(password);
-
-      form.removeEventListener('submit', onSubmit);
-      dialog.close();
-      updateLockState();
-      updateNoteFormState();
-      await onSuccess?.();
-    } catch (err) {
-      console.error(err);
-      error.textContent = 'Contraseña incorrecta.';
-      error.hidden = false;
-      input.focus();
-      input.select();
-    }
-  };
-
-  form.addEventListener('submit', onSubmit);
+  $('pw-error').hidden = true;
+  $('pw-input').value = '';
   dialog.showModal();
 }
+
+$('pw-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('pw-input');
+  const error = $('pw-error');
+  const password = input.value;
+  if (!password || !pwRequest || pwBusy) return;
+
+  const { mode, onSuccess } = pwRequest;
+  pwBusy = true;
+  try {
+    // Re-check: another tab may have created the password since the dialog opened.
+    if (mode === 'create' && !(await isPasswordConfigured())) await createPassword(password);
+    else await unlock(password);
+  } catch (err) {
+    console.error(err);
+    error.textContent = 'Contraseña incorrecta.';
+    error.hidden = false;
+    input.focus();
+    input.select();
+    return;
+  } finally {
+    pwBusy = false;
+  }
+
+  pwRequest = null;
+  $('pw-dialog').close();
+  updateLockState();
+  updateNoteFormState();
+  await onSuccess?.();
+});
+
+$('pw-dialog').addEventListener('close', () => {
+  pwRequest = null;
+  $('pw-input').value = ''; // don't leave the password sitting in the DOM
+});
 
 $('pw-cancel').addEventListener('click', () => $('pw-dialog').close());
 
@@ -391,17 +410,21 @@ $('note-camera-btn').addEventListener('click', async () => {
 });
 
 $('camera-capture').addEventListener('click', async () => {
-  const blob = await capturePhoto($('camera-video'));
-  setNotePhoto(blob);
-  stopCamera(cameraStream);
-  cameraStream = null;
+  const video = $('camera-video');
+  if (!video.videoWidth) return; // stream not ready yet: the frame would be empty
+  const blob = await capturePhoto(video);
+  if (blob) setNotePhoto(blob);
   $('camera-dialog').close();
 });
 
-$('camera-cancel').addEventListener('click', () => {
+$('camera-cancel').addEventListener('click', () => $('camera-dialog').close());
+
+// 'close' fires for every way out (buttons and Escape), so the camera is
+// always released here instead of staying on after Escape.
+$('camera-dialog').addEventListener('close', () => {
   stopCamera(cameraStream);
   cameraStream = null;
-  $('camera-dialog').close();
+  $('camera-video').srcObject = null;
 });
 
 $('note-gallery-btn').addEventListener('click', () => $('note-gallery-input').click());
@@ -568,7 +591,12 @@ function taskItem(t) {
       : []),
     h(
       'button',
-      { type: 'button', class: 'btn btn-ghost icon-btn', 'aria-label': 'Eliminar tarea', onclick: () => removeTask(t.id) },
+      {
+        type: 'button',
+        class: 'btn btn-ghost icon-btn',
+        'aria-label': 'Eliminar tarea',
+        onclick: () => removeTask(t.id),
+      },
       icon('trash'),
     ),
   );
@@ -651,7 +679,12 @@ function noteItem(n) {
       ),
       h(
         'button',
-        { type: 'button', class: 'btn btn-ghost icon-btn', 'aria-label': 'Eliminar nota', onclick: () => removeNote(n.id) },
+        {
+          type: 'button',
+          class: 'btn btn-ghost icon-btn',
+          'aria-label': 'Eliminar nota',
+          onclick: () => removeNote(n.id),
+        },
         icon('trash'),
       ),
     ),
@@ -662,7 +695,9 @@ function noteItem(n) {
 }
 
 function renderNotesView() {
-  $('notes-list').replaceChildren(...(notes.length ? notes.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]));
+  $('notes-list').replaceChildren(
+    ...(notes.length ? notes.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]),
+  );
 }
 
 function renderToday() {
@@ -693,7 +728,11 @@ $('task-form').addEventListener('submit', async (e) => {
     await addTask(title, due, priority, note || null);
   } catch (err) {
     console.error('Could not save the task:', err);
-    alert(err.name === 'ConstraintError' ? 'Ya existe una tarea con ese título.' : 'No se pudo guardar la tarea. Intenta de nuevo.');
+    alert(
+      err.name === 'ConstraintError'
+        ? 'Ya existe una tarea con ese título.'
+        : 'No se pudo guardar la tarea. Intenta de nuevo.',
+    );
     return;
   }
   e.target.reset();

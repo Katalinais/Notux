@@ -5,7 +5,7 @@ export function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = event => {
+    request.onupgradeneeded = (event) => {
       const db = event.target.result;
       const tx = event.target.transaction;
       const oldVersion = event.oldVersion;
@@ -29,7 +29,7 @@ export function openDatabase() {
         const priorityMap = { alta: 'high', media: 'medium', baja: 'low' };
         const seenTitles = new Set(); // byTitle is unique: dedupe before copying, don't just fail
 
-        legacyStore.openCursor().onsuccess = e => {
+        legacyStore.openCursor().onsuccess = (e) => {
           const cursor = e.target.result;
           if (!cursor) {
             db.deleteObjectStore('tareas'); // only once every record was copied
@@ -58,7 +58,7 @@ export function openDatabase() {
         // Snapshot the records first with getAll(): renaming a primary key means
         // delete+add, and a live cursor would re-visit a record we just re-added.
         const configStore = tx.objectStore('config');
-        configStore.getAll().onsuccess = e => {
+        configStore.getAll().onsuccess = (e) => {
           for (const old of e.target.result) {
             const migrated = {
               id: old.id === 'notasPrivadas' ? 'privateNotes' : old.id,
@@ -88,7 +88,7 @@ export function openDatabase() {
         const store = tx.objectStore('tasks');
         if (!store.indexNames.contains('byTitle')) {
           const seenTitles = new Set();
-          store.openCursor().onsuccess = e => {
+          store.openCursor().onsuccess = (e) => {
             const cursor = e.target.result;
             if (!cursor) {
               store.createIndex('byTitle', 'title', { unique: true });
@@ -105,8 +105,8 @@ export function openDatabase() {
       }
     };
 
-    request.onsuccess = event => resolve(event.target.result);
-    request.onerror = event => reject(event.target.error);
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
   });
 }
 
@@ -176,7 +176,7 @@ export function tasksByPriority(db, priority) {
     const index = store.index('byPriority');
     const cursorRequest = index.openCursor(IDBKeyRange.only(priority));
 
-    cursorRequest.onsuccess = event => {
+    cursorRequest.onsuccess = (event) => {
       const cursor = event.target.result;
       if (cursor) {
         result.push(cursor.value);
@@ -198,7 +198,7 @@ export function markTasksDoneByPriority(db, priority) {
     const cursorRequest = index.openCursor(IDBKeyRange.only(priority));
     let updated = 0;
 
-    cursorRequest.onsuccess = event => {
+    cursorRequest.onsuccess = (event) => {
       const cursor = event.target.result;
       if (!cursor) return;
       const task = cursor.value;

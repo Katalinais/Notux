@@ -6,7 +6,7 @@ export async function computeHash(text) {
   const data = textEncoder.encode(text);
   const buffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buffer))
-    .map(b => b.toString(16).padStart(2, '0'))
+    .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
@@ -17,13 +17,9 @@ export function generateSalt() {
 // Derives a reproducible AES-GCM key from a password and a salt.
 // Not exportable: it can't be read or saved, only re-derived.
 export async function deriveKeyFromPassword(password, salt) {
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    textEncoder.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  );
+  const keyMaterial = await crypto.subtle.importKey('raw', textEncoder.encode(password), 'PBKDF2', false, [
+    'deriveKey',
+  ]);
 
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },

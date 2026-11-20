@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+icons/
+# Hand-formatted (one-line rules / compact markup); rewritten in the Angular migration.
+*.css
+*.html
