@@ -5,6 +5,7 @@
 // and salt). Each one is written as { $type, data: base64 } and turned back
 // into exactly the same type on import, so encrypted notes still decrypt.
 import { exportAll, replaceAll, DATA_STORES, DB_VERSION } from './db.js';
+import { subjectsFromLegacyBlocks } from './subjects.js';
 
 const APP_ID = 'notux';
 const FORMAT = 1;
@@ -111,6 +112,14 @@ export function parseBackup(text) {
     data[name] = decode(list);
   }
 
+  // Backups from before subjects (dbVersion ≤ 5) have blocks with their own
+  // name and color: convert them exactly like the database upgrade does.
+  if (data.schedule.some((b) => b.subjectId == null)) {
+    const migrated = subjectsFromLegacyBlocks(data.schedule, data.subjects);
+    data.subjects = [...data.subjects, ...migrated.subjects];
+    data.schedule = migrated.blocks;
+  }
+
   const bad = (msg) => {
     throw new InvalidBackupError(`El respaldo está dañado: ${msg}`);
   };
@@ -119,8 +128,16 @@ export function parseBackup(text) {
   const titles = new Set(data.tasks.map((t) => t.title));
   if (titles.size !== data.tasks.length) bad('hay tareas con el mismo título.');
   for (const n of data.notes) if (typeof n.title !== 'string' || !Number.isInteger(n.id)) bad('hay una nota inválida.');
+  for (const s of data.subjects) {
+    if (typeof s.name !== 'string' || !Number.isInteger(s.id)) bad('hay una materia inválida.');
+  }
+  const subjectIds = new Set(data.subjects.map((s) => s.id));
+  if (subjectIds.size !== data.subjects.length) bad('hay materias repetidas.');
+  const linked = (r) => r.subjectId == null || subjectIds.has(r.subjectId);
+  if (!data.tasks.every(linked) || !data.notes.every(linked)) bad('hay tareas o notas de una materia que no existe.');
   for (const b of data.schedule) {
-    const ok = Number.isInteger(b.id) && Number.isInteger(b.day) && b.day >= 0 && b.day <= 6;
+    const ok =
+      Number.isInteger(b.id) && Number.isInteger(b.day) && b.day >= 0 && b.day <= 6 && subjectIds.has(b.subjectId);
     if (!ok || !/^\d\d:\d\d$/.test(b.start) || !/^\d\d:\d\d$/.test(b.end)) bad('hay una clase inválida.');
   }
   for (const c of data.config) if (typeof c.id !== 'string') bad('la configuración es inválida.');
@@ -139,6 +156,7 @@ export function summarize(data) {
     privateNotes: data.tasks?.filter((t) => t.encryptedNote).length ?? 0,
     notes: data.notes?.length ?? 0,
     media: data.notes?.filter((n) => n.photo || n.audio).length ?? 0,
+    subjects: data.subjects?.length ?? 0,
     schedule: data.schedule?.length ?? 0,
     hasPassword: data.config?.some((c) => c.id === 'privateNotes') ?? false,
   };
@@ -150,6 +168,7 @@ export function describeCounts(c) {
   return [
     plural(c.tasks, 'tarea', 'tareas'),
     plural(c.notes, 'nota', 'notas'),
-    plural(c.schedule, 'clase', 'clases'),
+    plural(c.subjects ?? 0, 'materia', 'materias'),
+    plural(c.schedule, 'horario', 'horarios'),
   ].join(', ');
 }

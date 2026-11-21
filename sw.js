@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v9';
+const CACHE_NAME = 'notux-v12';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -14,9 +14,13 @@ const CORE_ASSETS = [
   './js/dates.js',
   './js/calendar.js',
   './js/schedule.js',
+  './js/subjects.js',
+  './js/note-board.js',
   './js/backup.js',
   './js/reminders.js',
-  './icons/icon.svg',
+  './icons/favicon-64.png',
+  './icons/logo.png',
+  './icons/logo-mark.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
@@ -207,10 +211,12 @@ async function notifyToday({ force = false } = {}) {
     const tasks = (await getAll(db, 'tasks')).filter((t) => !t.done && t.due);
     const dueToday = tasks.filter((t) => t.due === today).map((t) => t.title);
     const overdue = tasks.filter((t) => t.due < today).length;
+    // Blocks point to a subject since v6; older databases still carry the name.
+    const subjects = new Map((await getAll(db, 'subjects')).map((s) => [s.id, s.name]));
     const classes = (await getAll(db, 'schedule'))
       .filter((b) => b.day === now.getDay())
       .sort((a, b) => a.start.localeCompare(b.start))
-      .map((b) => `${b.subject} ${shortTime(b.start)}`);
+      .map((b) => `${subjects.get(b.subjectId) ?? b.subject ?? 'Clase'} ${shortTime(b.start)}`);
 
     const lines = [];
     if (dueToday.length) lines.push(`Vencen hoy: ${listOf(dueToday)}`);

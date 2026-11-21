@@ -8,6 +8,7 @@ import {
   markTasksDoneByPriority,
   createNote,
   updateNote,
+  putNotes,
   deleteNote,
   getAllNotes,
 } from './db.js';
@@ -33,7 +34,8 @@ import { showToast } from './toast.js';
 import { $, h, icon, iconButton, emptyState } from './dom.js';
 import { LOCALE, dayDiff, relativeDate, todayISO } from './dates.js';
 import { initCalendar } from './calendar.js';
-import { initSchedule, todayStatus, formatRange, formatDuration } from './schedule.js';
+import { initNoteBoard } from './note-board.js';
+import { initSchedule, todayStatus, formatRange, formatDuration, sessionSummary } from './schedule.js';
 import {
   createBackup,
   backupFileName,
@@ -102,25 +104,34 @@ if ('serviceWorker' in navigator) {
 /* ---------- Install prompt ---------- */
 let deferredInstallPrompt = null;
 
+// Offered in the sidebar (desktop) and in Ajustes (everywhere) only while the
+// browser says the app can be installed.
+function showInstall(available) {
+  $('btn-install').hidden = !available;
+  $('install-section').hidden = !available;
+}
+
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstallPrompt = e;
-  $('btn-install').hidden = false;
+  showInstall(true);
 });
 
 window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
-  $('btn-install').hidden = true;
+  showInstall(false);
 });
 
-$('btn-install').addEventListener('click', async () => {
+async function promptInstall() {
   if (!deferredInstallPrompt) return;
   deferredInstallPrompt.prompt();
   const { outcome } = await deferredInstallPrompt.userChoice;
   console.log('Install prompt outcome:', outcome);
   deferredInstallPrompt = null;
-  $('btn-install').hidden = true;
-});
+  showInstall(false);
+}
+$('btn-install').addEventListener('click', promptInstall);
+$('btn-install-settings').addEventListener('click', promptInstall);
 
 /* ---------- State ---------- */
 let db;
@@ -132,6 +143,7 @@ const decryptedNotes = new Map(); // task.id -> plaintext, cleared on lock
 
 let editingTask = null; // { id, noteLoaded } while the edit dialog is open
 let editingNoteId = null; // id of the free-form note loaded in the note form, or null
+let notesFilter = 'all'; // 'all' | 'none' | subject id — which notes the Notas board shows
 
 let cameraStream = null;
 let capturedPhoto = null; // Blob | null, for the note currently being composed
@@ -145,23 +157,76 @@ let capturedAudio = null; // Blob | null, for the note currently being composed
 let capturedAudioUrl = null;
 const noteAudioUrls = new Map(); // note.id -> object URL, same lifecycle as noteThumbUrls
 
-/* ---------- Routes ---------- */
-const VIEWS = ['inicio', 'tareas', 'calendario', 'horario', 'notas'];
+/* ---------- Sidebar (tablet/desktop) ---------- */
+// Collapses to an icon rail; the choice is remembered per browser.
+const SIDEBAR_KEY = 'notux.sidebar';
 
-function currentRoute() {
-  const route = location.hash.replace(/^#\/?/, '');
-  return VIEWS.includes(route) ? route : 'inicio';
+function setSidebarCollapsed(collapsed) {
+  document.querySelector('.app').classList.toggle('is-sidebar-collapsed', collapsed);
+  const toggle = $('sidebar-toggle');
+  const label = collapsed ? 'Expandir menú' : 'Contraer menú';
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.querySelector('.nav-label').textContent = label;
+  toggle.title = label;
+  // With the labels hidden, a tooltip names each icon.
+  for (const link of document.querySelectorAll('#sidebar-nav a, .sidebar-footer .side-btn:not(#sidebar-toggle)')) {
+    if (collapsed) link.title = link.querySelector('.nav-label').textContent;
+    else link.removeAttribute('title');
+  }
 }
 
-function navigate() {
-  const route = currentRoute();
-  for (const v of VIEWS) {
-    $(`view-${v}`).hidden = v !== route;
+{
+  let stored = null;
+  try {
+    stored = localStorage.getItem(SIDEBAR_KEY);
+  } catch {
+    // storage blocked: start expanded
   }
+  // Apply the saved state without animating it on load.
+  document.documentElement.classList.add('no-transition');
+  setSidebarCollapsed(stored === 'collapsed');
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove('no-transition')));
+}
+
+$('sidebar-toggle').addEventListener('click', () => {
+  const collapsed = !document.querySelector('.app').classList.contains('is-sidebar-collapsed');
+  setSidebarCollapsed(collapsed);
+  try {
+    localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded');
+  } catch {
+    // ignore
+  }
+});
+
+/* ---------- Routes ---------- */
+const VIEWS = ['inicio', 'tareas', 'calendario', 'horario', 'notas', 'materia'];
+const NAV_FOR = { materia: 'horario' }; // views without a tab of their own highlight their parent
+
+// '#/notas' → { view: 'notas' }, '#/materia/3' → { view: 'materia', id: 3 }
+function currentRoute() {
+  const [view, param] = location.hash.replace(/^#\/?/, '').split('/');
+  if (view === 'materia' && /^\d+$/.test(param ?? '')) return { view, id: Number(param) };
+  return { view: VIEWS.includes(view) && view !== 'materia' ? view : 'inicio' };
+}
+
+let previousView = null;
+
+function navigate() {
+  const { view } = currentRoute();
+  for (const v of VIEWS) {
+    $(`view-${v}`).hidden = v !== view;
+  }
+  const nav = NAV_FOR[view] ?? view;
   document.querySelectorAll('[data-route]').forEach((a) => {
-    if (a.dataset.route === route) a.setAttribute('aria-current', 'page');
+    if (a.dataset.route === nav) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
+  if (view === 'materia') renderSubjectPage();
+  else document.title = 'Notux';
+  // Leaving Notas with the form open and nothing typed just closes it.
+  if (previousView === 'notas' && view !== 'notas' && !noteFormDirty()) closeNoteForm();
+  if (previousView !== view) window.scrollTo(0, 0);
+  previousView = view;
 }
 
 window.addEventListener('hashchange', navigate);
@@ -252,13 +317,19 @@ function toggleNote(t) {
 async function updateLockState() {
   const configured = notesKey ? true : await isPasswordConfigured(db);
   const btn = $('notes-lock');
-  btn.className = `chip ${notesKey ? 'chip-ok' : 'chip-warn'}`;
-  btn.replaceChildren(icon(notesKey ? 'unlock' : 'lock', 14), configured ? 'Notas privadas' : 'Configurar notas');
-  btn.title = notesKey ? 'Bloquear notas privadas' : configured ? 'Desbloquear notas privadas' : 'Crear una contraseña';
+  btn.className = `chip chip-icon ${notesKey ? 'chip-ok' : 'chip-warn'}`;
+  btn.replaceChildren(icon(notesKey ? 'unlock' : 'lock', 16));
+  const label = notesKey
+    ? 'Notas privadas desbloqueadas. Bloquear'
+    : configured
+      ? 'Notas privadas bloqueadas. Desbloquear'
+      : 'Notas privadas: crear una contraseña';
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
   $('btn-change-password').hidden = !configured;
   $('privacy-hint').textContent = configured
     ? 'Se cifran con tu contraseña antes de guardarse. Si la olvidas, no se pueden recuperar.'
-    : 'Aún no tienes contraseña. Créala con «Configurar notas» en la barra superior.';
+    : 'Aún no tienes contraseña. Créala con el candado de la barra superior.';
 }
 
 function updateNoteFormState() {
@@ -424,12 +495,13 @@ $('pwchange-dialog').addEventListener('close', () => $('pwchange-form').reset())
 $('pwchange-cancel').addEventListener('click', () => $('pwchange-dialog').close());
 
 /* ---------- Tasks: actions ---------- */
-async function addTask(title, due, priority, noteText) {
+async function addTask({ title, due, priority = 'medium', noteText = null, subjectId = null }) {
   const task = {
     title,
     due: due || null,
     done: false,
     priority,
+    subjectId,
     createdAt: new Date().toISOString(),
     completedAt: null,
     encryptedNote: null,
@@ -501,6 +573,7 @@ async function openTaskEditor(id) {
   $('task-edit-title').value = t.title;
   $('task-edit-due').value = t.due ?? '';
   $('task-edit-priority').value = t.priority ?? 'medium';
+  $('task-edit-subject').value = subjectValue(t.subjectId);
   $('task-edit-error').hidden = true;
   await loadEditorNote();
   $('task-dialog').showModal();
@@ -559,7 +632,13 @@ $('task-edit-form').addEventListener('submit', async (e) => {
     return;
   }
 
-  const updated = { ...t, title, due: $('task-edit-due').value || null, priority: $('task-edit-priority').value };
+  const updated = {
+    ...t,
+    title,
+    due: $('task-edit-due').value || null,
+    priority: $('task-edit-priority').value,
+    subjectId: readSubjectSelect($('task-edit-subject')),
+  };
   let noteText = null; // null = note not touched
   savingTask = true;
   try {
@@ -759,33 +838,75 @@ function resetNoteForm() {
   $('note-form').reset();
   resetNotePhoto();
   resetNoteAudio();
-  $('note-edit-banner').hidden = true;
+  $('note-form-title').textContent = 'Nueva nota';
   $('note-submit').textContent = 'Guardar nota';
 }
+
+// The form lives folded away behind "Nueva nota" so the board shows every note;
+// it unfolds for a new note or to edit one.
+function openNoteForm({ subjectId = null } = {}) {
+  const form = $('note-form');
+  if (form.hidden) {
+    form.hidden = false;
+    $('note-new').setAttribute('aria-expanded', 'true');
+  }
+  if (editingNoteId === null && subjectId !== null) $('note-subject').value = subjectValue(subjectId);
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('note-title').focus({ preventScroll: true });
+}
+
+function closeNoteForm({ focus = false } = {}) {
+  const hadEdit = editingNoteId !== null;
+  resetNoteForm();
+  $('note-form').hidden = true;
+  $('note-new').setAttribute('aria-expanded', 'false');
+  if (hadEdit) renderNotesView();
+  if (focus) $('note-new').focus();
+}
+
+// Anything typed or attached that closing would throw away.
+function noteFormDirty() {
+  if ($('note-form').hidden) return false;
+  return !!(
+    activeRecording ||
+    capturedPhoto ||
+    capturedAudio ||
+    $('note-title').value.trim() ||
+    $('note-text').value.trim()
+  );
+}
+
+$('note-new').addEventListener('click', () => {
+  if (editingNoteId !== null) resetNoteForm(); // switch from editing to a fresh note
+  const subjectId = typeof notesFilter === 'number' ? notesFilter : null; // filtering by a subject → preselect it
+  openNoteForm({ subjectId });
+  renderNotesView();
+});
+$('note-cancel').addEventListener('click', () => closeNoteForm({ focus: true }));
+$('note-form-close').addEventListener('click', () => closeNoteForm({ focus: true }));
+$('note-form').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !noteFormDirty()) closeNoteForm({ focus: true });
+});
 
 // Editing reuses the creation form, so camera, gallery and recording work the same.
 function startNoteEdit(id) {
   const n = notes.find((x) => x.id === id);
   if (!n) return;
+  if (currentRoute().view !== 'notas') location.hash = '#/notas';
   discardRecording();
   editingNoteId = id;
   $('note-title').value = n.title;
   $('note-text').value = n.text ?? '';
+  $('note-subject').value = subjectValue(n.subjectId);
   if (n.photo) setNotePhoto(n.photo);
   else resetNotePhoto();
   if (n.audio) setNoteAudio(n.audio);
   else resetNoteAudio();
-  $('note-edit-banner').hidden = false;
+  $('note-form-title').textContent = 'Editar nota';
   $('note-submit').textContent = 'Guardar cambios';
   renderNotesView();
-  $('note-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  $('note-title').focus({ preventScroll: true });
+  openNoteForm();
 }
-
-$('note-edit-cancel').addEventListener('click', () => {
-  resetNoteForm();
-  renderNotesView();
-});
 
 let savingNote = false;
 
@@ -802,9 +923,16 @@ $('note-form').addEventListener('submit', async (e) => {
     titleInput.focus();
     return;
   }
-  const fields = { title, text: $('note-text').value.trim(), photo: capturedPhoto, audio: capturedAudio };
+  const fields = {
+    title,
+    text: $('note-text').value.trim(),
+    subjectId: readSubjectSelect($('note-subject')),
+    photo: capturedPhoto,
+    audio: capturedAudio,
+  };
   const existing = editingNoteId !== null ? notes.find((n) => n.id === editingNoteId) : null;
 
+  let savedId = null;
   savingNote = true;
   try {
     if (existing) {
@@ -816,6 +944,7 @@ $('note-form').addEventListener('submit', async (e) => {
       const note = { ...fields, createdAt: new Date().toISOString() };
       const id = await createNote(db, note);
       notes.push({ ...note, id });
+      savedId = id;
     }
   } catch (err) {
     console.error('Could not save the note:', err);
@@ -824,9 +953,14 @@ $('note-form').addEventListener('submit', async (e) => {
   } finally {
     savingNote = false;
   }
-  resetNoteForm();
+  closeNoteForm();
+  // A new note filed under another subject than the one being filtered would
+  // seem to vanish; show everything instead.
+  if (!noteMatchesFilter(fields)) notesFilter = 'all';
   renderNotesView();
-  if (existing) showToast('Nota actualizada.');
+  renderSubjectViews();
+  noteBoard.reveal(savedId ?? existing.id); // it may have landed below the visible part of the board
+  showToast(existing ? 'Nota actualizada.' : 'Nota guardada.');
 });
 
 async function removeNote(id) {
@@ -841,8 +975,9 @@ async function removeNote(id) {
   }
   notes = notes.filter((n) => n.id !== id);
   forgetNoteMedia(id);
-  if (editingNoteId === id) resetNoteForm();
+  if (editingNoteId === id) closeNoteForm();
   renderNotesView();
+  renderSubjectViews();
   showToast(`Nota «${note.title}» eliminada.`, { action: { label: 'Deshacer', onClick: () => restoreNote(note) } });
 }
 
@@ -856,6 +991,7 @@ async function restoreNote(note) {
   }
   notes.push(note);
   renderNotesView();
+  renderSubjectViews();
 }
 
 // Deterministic per note.id so cards don't re-shuffle their look on every re-render.
@@ -867,8 +1003,16 @@ function noteCardStyle(id) {
 }
 
 /* ---------- Render ---------- */
-function taskItem(t) {
+// Small colored label with the subject's name; links to its page.
+function subjectTag(subjectId) {
+  const s = subjectId != null ? schedule.subject(subjectId) : null;
+  if (!s) return null;
+  return h('a', { class: `subject-tag blk-${s.color}`, href: `#/materia/${s.id}` }, s.name);
+}
+
+function taskItem(t, { showSubject = true } = {}) {
   const overdue = !t.done && t.due && dayDiff(t.due) < 0;
+  const tag = showSubject ? subjectTag(t.subjectId) : null;
   const hasNote = !!t.encryptedNote;
   const noteVisible = hasNote && revealedNoteId === t.id && decryptedNotes.has(t.id);
 
@@ -891,8 +1035,13 @@ function taskItem(t) {
       h('span', { class: 'task-title' }, t.title),
       h(
         'span',
-        { class: `task-meta${overdue ? ' overdue' : ''}` },
-        `${relativeDate(t.due)} · ${PRIORITY_LABEL[t.priority] ?? 'Media'}`,
+        { class: 'task-meta-row' },
+        h(
+          'span',
+          { class: `task-meta${overdue ? ' overdue' : ''}` },
+          `${relativeDate(t.due)} · ${PRIORITY_LABEL[t.priority] ?? 'Media'}`,
+        ),
+        ...(tag ? [tag] : []),
       ),
     ),
     h(
@@ -935,14 +1084,23 @@ function render() {
   renderTasksView();
   calendar.render();
   renderTodayPanel();
+  renderSubjectViews();
 }
 
 function renderTasksView() {
   const search = $('tasks-search').value.trim().toLowerCase();
   const priorityFilter = $('tasks-filter').value;
+  const subjectFilter = $('tasks-subject').value; // 'all' | 'none' | id
 
   const filtered = tasks
     .filter((t) => priorityFilter === 'all' || t.priority === priorityFilter)
+    .filter((t) =>
+      subjectFilter === 'all'
+        ? true
+        : subjectFilter === 'none'
+          ? t.subjectId == null
+          : t.subjectId === Number(subjectFilter),
+    )
     .filter((t) => t.title.toLowerCase().includes(search))
     .sort(
       (a, b) =>
@@ -956,7 +1114,8 @@ function renderTasksView() {
   );
 }
 
-function noteItem(n) {
+function noteItem(n, { showSubject = true, movable = false } = {}) {
+  const tag = showSubject ? subjectTag(n.subjectId) : null;
   let thumbUrl = noteThumbUrls.get(n.id);
   if (n.photo && !thumbUrl) {
     thumbUrl = URL.createObjectURL(n.photo);
@@ -970,15 +1129,38 @@ function noteItem(n) {
 
   return h(
     'div',
-    { class: `card note-card${editingNoteId === n.id ? ' is-editing' : ''}`, style: noteCardStyle(n.id) },
+    {
+      class: `card note-card${editingNoteId === n.id ? ' is-editing' : ''}`,
+      style: noteCardStyle(n.id),
+      'data-note-id': String(n.id),
+    },
     h(
       'div',
       { class: 'task' },
+      ...(movable
+        ? [
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'note-grip',
+                'aria-label': `Mover nota «${n.title}»`,
+                'aria-describedby': 'notes-board-help',
+              },
+              icon('grip', 18),
+            ),
+          ]
+        : []),
       h(
         'div',
         { class: 'task-body' },
         h('span', { class: 'task-title' }, n.title),
-        h('span', { class: 'task-meta' }, new Date(n.createdAt).toLocaleDateString(LOCALE)),
+        h(
+          'span',
+          { class: 'task-meta-row' },
+          h('span', { class: 'task-meta' }, new Date(n.createdAt).toLocaleDateString(LOCALE)),
+          ...(tag ? [tag] : []),
+        ),
       ),
       h(
         'div',
@@ -993,15 +1175,255 @@ function noteItem(n) {
   );
 }
 
-function renderNotesView() {
-  // Newest first, whatever order they were loaded, created or restored in.
-  const sorted = [...notes].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  $('notes-list').replaceChildren(
-    ...(sorted.length ? sorted.map(noteItem) : [emptyState('Aún no tienes notas.', 'note')]),
+const newestFirst = (a, b) => b.createdAt.localeCompare(a.createdAt);
+
+function noteMatchesFilter(n, filter = notesFilter) {
+  if (filter === 'all') return true;
+  if (filter === 'none') return n.subjectId == null;
+  return n.subjectId === filter;
+}
+
+function renderNotesFilter() {
+  const subjects = schedule.subjects();
+  // A subject filter that no longer exists (deleted, or after a restore) falls back to all.
+  if (typeof notesFilter === 'number' && !schedule.subject(notesFilter)) notesFilter = 'all';
+  const container = $('notes-filter');
+  container.hidden = subjects.length === 0;
+  if (container.hidden) {
+    notesFilter = 'all';
+    return;
+  }
+  const chip = (value, label, count, color) =>
+    h(
+      'button',
+      {
+        type: 'button',
+        class: `filter-chip${color ? ` blk-${color}` : ''}`,
+        'aria-pressed': notesFilter === value ? 'true' : 'false',
+        onclick: () => {
+          notesFilter = value;
+          renderNotesView();
+        },
+      },
+      ...(color ? [h('span', { class: 'filter-dot', 'aria-hidden': 'true' })] : []),
+      label,
+      h('span', { class: 'filter-count' }, String(count)),
+    );
+  const unfiled = notes.filter((n) => n.subjectId == null).length;
+  container.replaceChildren(
+    chip('all', 'Todas', notes.length),
+    ...subjects.map((s) => chip(s.id, s.name, notes.filter((n) => n.subjectId === s.id).length, s.color)),
+    ...(unfiled && unfiled < notes.length ? [chip('none', 'Sin materia', unfiled)] : []),
   );
 }
 
-const schedule = initSchedule({ onChange: () => renderTodayPanel() });
+function renderNotesView() {
+  renderNotesFilter();
+  // Newest first, whatever order they were loaded, created or restored in.
+  const shown = notes.filter((n) => noteMatchesFilter(n)).sort(newestFirst);
+  const total = notes.length;
+  $('notes-count').textContent =
+    total === 0
+      ? ''
+      : shown.length === total
+        ? `${total} nota${total === 1 ? '' : 's'}`
+        : `${shown.length} de ${total} notas`;
+  $('notes-empty').replaceChildren(
+    ...(shown.length
+      ? []
+      : [
+          emptyState(
+            total ? 'No hay notas de esta materia.' : 'Aún no tienes notas. Crea una con «Nueva nota».',
+            'note',
+          ),
+        ]),
+  );
+  $('notes-board-help').hidden = shown.length === 0;
+  $('notes-arrange').hidden = !notes.some((n) => n.board);
+  noteBoard.render(shown.map((n) => ({ note: n, el: noteItem(n, { movable: true }) })));
+}
+
+/* ---------- Notes canvas ---------- */
+const noteBoard = initNoteBoard($('notes-list'), { onMove: saveNotePositions });
+
+async function saveNotePositions(changes) {
+  const boards = new Map(changes.map((c) => [c.id, c.board]));
+  const updated = notes.filter((n) => boards.has(n.id)).map((n) => ({ ...n, board: boards.get(n.id) }));
+  try {
+    await putNotes(db, updated);
+  } catch (err) {
+    console.error('Could not save the note positions:', err);
+    showToast('No se pudo guardar dónde dejaste la nota.', { type: 'error' });
+    renderNotesView(); // put everything back where the database says
+    return;
+  }
+  // Replace in place (not re-render): the cards are already where they were dropped.
+  const byId = new Map(updated.map((n) => [n.id, n]));
+  notes = notes.map((n) => byId.get(n.id) ?? n);
+  $('notes-arrange').hidden = false;
+}
+
+// "Ordenar": forget every position and go back to the automatic columns.
+$('notes-arrange').addEventListener('click', async () => {
+  const previous = notes.filter((n) => n.board);
+  if (!previous.length) return;
+  const cleared = previous.map(({ board: _board, ...rest }) => rest);
+  try {
+    await putNotes(db, cleared);
+  } catch (err) {
+    console.error('Could not reset the board:', err);
+    showToast('No se pudieron ordenar las notas.', { type: 'error' });
+    return;
+  }
+  const byId = new Map(cleared.map((n) => [n.id, n]));
+  notes = notes.map((n) => byId.get(n.id) ?? n);
+  renderNotesView();
+  showToast('Notas ordenadas.', {
+    action: {
+      label: 'Deshacer',
+      onClick: async () => {
+        // Only the positions come back; anything edited since stays as it is now.
+        const back = new Map(previous.map((n) => [n.id, n.board]));
+        const restored = notes.filter((n) => back.has(n.id)).map((n) => ({ ...n, board: back.get(n.id) }));
+        try {
+          await putNotes(db, restored);
+        } catch (err) {
+          console.error('Could not restore the board:', err);
+          showToast('No se pudo deshacer.', { type: 'error' });
+          return;
+        }
+        const byId = new Map(restored.map((n) => [n.id, n]));
+        notes = notes.map((n) => byId.get(n.id) ?? n);
+        renderNotesView();
+      },
+    },
+  });
+});
+
+/* ---------- Subjects: selects and subject page ---------- */
+const subjectValue = (id) => (id != null && schedule.subject(id) ? String(id) : '');
+const readSubjectSelect = (select) => (select.value ? Number(select.value) : null);
+
+// Every <select data-subject-select> lists the subjects: "none" ones start with
+// "Sin materia" (for picking), "filter" ones with "Todas" + "Sin materia".
+function fillSubjectSelects() {
+  const subjects = schedule.subjects();
+  for (const select of document.querySelectorAll('[data-subject-select]')) {
+    const previous = select.value;
+    const isFilter = select.dataset.subjectSelect === 'filter';
+    select.replaceChildren(
+      ...(isFilter
+        ? [h('option', { value: 'all' }, 'Todas'), h('option', { value: 'none' }, 'Sin materia')]
+        : [h('option', { value: '' }, 'Sin materia')]),
+      ...subjects.map((s) => h('option', { value: String(s.id) }, s.name)),
+    );
+    const stillThere = [...select.options].some((o) => o.value === previous);
+    select.value = stillThere ? previous : isFilter ? 'all' : '';
+    // Nothing to choose from yet: the field is just noise.
+    select.closest('div').hidden = subjects.length === 0;
+  }
+}
+
+function subjectCounts(subjectId) {
+  return {
+    pending: tasks.filter((t) => t.subjectId === subjectId && !t.done).length,
+    notes: notes.filter((n) => n.subjectId === subjectId).length,
+  };
+}
+
+const byPendingThenDue = (a, b) =>
+  Number(a.done) - Number(b.done) ||
+  (a.due ?? '9').localeCompare(b.due ?? '9') ||
+  a.createdAt.localeCompare(b.createdAt);
+
+function renderSubjectPage() {
+  const route = currentRoute();
+  if (route.view !== 'materia' || !db) return;
+  const subject = schedule.subject(route.id);
+  $('subject-page').hidden = !subject;
+  $('subject-missing').hidden = !!subject;
+  if (!subject) return;
+
+  const title = $('subject-page-title');
+  title.className = `subject-heading blk-${subject.color}`;
+  title.textContent = subject.name;
+  document.title = `${subject.name} · Notux`;
+  const own = schedule.blocksOf(subject.id);
+  $('subject-page-sessions').textContent = own.length
+    ? sessionSummary(own) +
+      (own.some((b) => b.place) ? ` · ${[...new Set(own.map((b) => b.place).filter(Boolean))].join(', ')}` : '')
+    : 'Sin horario';
+
+  const subjectTasks = tasks.filter((t) => t.subjectId === subject.id).sort(byPendingThenDue);
+  $('subject-tasks').replaceChildren(
+    ...(subjectTasks.length
+      ? subjectTasks.map((t) => taskItem(t, { showSubject: false }))
+      : [emptyState('Sin tareas de esta materia.')]),
+  );
+  const subjectNotes = notes.filter((n) => n.subjectId === subject.id).sort(newestFirst);
+  $('subject-notes').replaceChildren(
+    ...(subjectNotes.length
+      ? subjectNotes.map((n) => noteItem(n, { showSubject: false }))
+      : [emptyState('Sin notas de esta materia.', 'note')]),
+  );
+}
+
+// Anything that changes tasks, notes or subjects refreshes the places that
+// cross-reference them.
+function renderSubjectViews() {
+  schedule.renderSubjects();
+  renderSubjectPage();
+}
+
+$('subject-page-edit').addEventListener('click', () => schedule.openDialog({ subjectId: currentRoute().id }));
+
+$('subject-task-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('subject-task-title');
+  const title = input.value.trim();
+  if (!title) {
+    input.focus();
+    return;
+  }
+  try {
+    await addTask({ title, due: $('subject-task-due').value, subjectId: currentRoute().id });
+  } catch (err) {
+    notifyTaskSaveError(err);
+    return;
+  }
+  e.target.reset();
+  input.focus();
+});
+
+$('subject-note-add').addEventListener('click', () => {
+  const subjectId = currentRoute().id;
+  location.hash = '#/notas';
+  if (editingNoteId !== null) resetNoteForm();
+  notesFilter = subjectId;
+  renderNotesView();
+  openNoteForm({ subjectId });
+});
+
+// Mirrors a subject delete/undo on the tasks and notes held in memory (the
+// database already changed in the same transaction).
+function applySubjectChange({ type, snapshot }) {
+  if (type === 'deleted' || type === 'restored') {
+    const subjectId = type === 'restored' ? snapshot.subject.id : null;
+    const taskIds = new Set(snapshot.taskIds);
+    const noteIds = new Set(snapshot.noteIds);
+    for (const t of tasks)
+      if (taskIds.has(t.id) && (type === 'deleted' || t.subjectId == null)) t.subjectId = subjectId;
+    for (const n of notes)
+      if (noteIds.has(n.id) && (type === 'deleted' || n.subjectId == null)) n.subjectId = subjectId;
+  }
+  fillSubjectSelects();
+  render();
+  renderNotesView();
+  const route = currentRoute();
+  if (type === 'deleted' && route.view === 'materia' && route.id === snapshot.subject?.id) location.hash = '#/horario';
+}
+
+const schedule = initSchedule({ onChange: applySubjectChange, getCounts: subjectCounts });
 
 // Inicio's "Hoy" strip: today's classes (with what's on now / next) and how
 // many tasks are due today.
@@ -1010,6 +1432,7 @@ function renderTodayPanel() {
   $('today-classes').replaceChildren(
     ...(statuses.length
       ? statuses.map(({ block: b, status, minutesUntil, minutesLeft }) => {
+          const subject = schedule.subjectOf(b);
           const badge =
             status === 'now'
               ? h('span', { class: 'chip chip-ok' }, `Ahora · quedan ${formatDuration(minutesLeft)}`)
@@ -1019,11 +1442,11 @@ function renderTodayPanel() {
           return h(
             'a',
             {
-              href: '#/horario',
-              class: `card today-class blk-${b.color ?? 'indigo'}${status === 'past' ? ' is-past' : ''}`,
+              href: `#/materia/${b.subjectId}`,
+              class: `card today-class blk-${subject.color}${status === 'past' ? ' is-past' : ''}`,
             },
             h('span', { class: 'today-class-time' }, formatRange(b)),
-            h('span', { class: 'task-title' }, b.subject),
+            h('span', { class: 'task-title' }, subject.name),
             ...(b.place ? [h('span', { class: 'task-meta' }, b.place)] : []),
             ...(badge ? [badge] : []),
           );
@@ -1078,7 +1501,7 @@ function readLastBackup() {
 function renderBackupInfo() {
   const el = $('backup-last');
   const last = readLastBackup();
-  const hasData = tasks.length + notes.length + schedule.count() > 0;
+  const hasData = tasks.length + notes.length + schedule.subjects().length > 0;
   const days = last ? Math.floor((Date.now() - new Date(last)) / 86400000) : null;
   el.classList.toggle('is-stale', hasData && (days === null || days >= STALE_BACKUP_DAYS));
   el.textContent =
@@ -1119,12 +1542,14 @@ async function renderReminders() {
   $('reminders-test').hidden = !toggle.checked;
 }
 
-$('btn-settings').addEventListener('click', () => {
+function openSettings() {
   renderBackupInfo();
   renderReminders();
   updateLockState();
   $('settings-dialog').showModal();
-});
+}
+$('btn-settings').addEventListener('click', openSettings); // sidebar
+$('btn-settings-mobile').addEventListener('click', openSettings); // top bar on phones
 $('settings-close').addEventListener('click', () => $('settings-dialog').close());
 
 $('backup-export').addEventListener('click', async (e) => {
@@ -1164,6 +1589,7 @@ $('backup-file').addEventListener('change', async (e) => {
   $('restore-current').textContent = describeCounts({
     tasks: tasks.length,
     notes: notes.length,
+    subjects: schedule.subjects().length,
     schedule: schedule.count(),
   });
   $('restore-error').hidden = true;
@@ -1209,11 +1635,13 @@ async function reloadAllData() {
   notesKey = null;
   revealedNoteId = null;
   decryptedNotes.clear();
-  resetNoteForm();
+  closeNoteForm();
+  notesFilter = 'all';
   for (const id of [...noteThumbUrls.keys(), ...noteAudioUrls.keys()]) forgetNoteMedia(id);
   tasks = await getAllTasks(db);
   notes = await getAllNotes(db);
   await schedule.load(db);
+  fillSubjectSelects();
   $('task-note').value = '';
   updateLockState();
   updateNoteFormState();
@@ -1259,7 +1687,7 @@ const calendar = initCalendar({
   renderTask: taskItem,
   onAddTask: async (title, due, priority) => {
     try {
-      await addTask(title, due, priority, null);
+      await addTask({ title, due, priority });
     } catch (err) {
       notifyTaskSaveError(err);
       throw err;
@@ -1278,9 +1706,10 @@ $('task-form').addEventListener('submit', async (e) => {
   const due = $('task-due').value;
   const priority = $('task-priority').value;
   const note = $('task-note').value.trim();
+  const subjectId = readSubjectSelect($('task-subject'));
 
   try {
-    await addTask(title, due, priority, note || null);
+    await addTask({ title, due, priority, noteText: note || null, subjectId });
   } catch (err) {
     notifyTaskSaveError(err);
     return;
@@ -1295,6 +1724,7 @@ function updateBulkDoneButtonState() {
 }
 
 $('tasks-search').addEventListener('input', renderTasksView);
+$('tasks-subject').addEventListener('change', renderTasksView);
 $('tasks-filter').addEventListener('change', () => {
   renderTasksView();
   updateBulkDoneButtonState();
@@ -1338,6 +1768,7 @@ async function init() {
   tasks = await getAllTasks(db);
   notes = await getAllNotes(db);
   await schedule.load(db);
+  fillSubjectSelects();
 
   renderToday();
   renderNetwork();

@@ -49,7 +49,7 @@ export async function status(db) {
   if (!tags.includes(SYNC_TAG)) {
     return {
       level: 'limited',
-      message: 'Instala Notux (botón «Instalar») para que el recordatorio llegue aunque la app esté cerrada.',
+      message: 'Instala Notux como app para que el recordatorio llegue aunque esté cerrada.',
     };
   }
   return {

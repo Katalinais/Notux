@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Notux">
-  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="icons/favicon-64.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-maskable-192.png">
   <link rel="manifest" href="manifest.json">
@@ -38,40 +38,55 @@
     <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM9 4v16M15 10l-2 2 2 2"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M4 21h16"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Zm4 11a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2V5Zm0 15a2 2 0 0 0 2 2h13v-4M8 7h7"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-5-3a5 5 0 0 0 10 0M12 19v3"/></symbol>
   </svg>
 
   <div class="app">
     <aside class="sidebar">
-      <a href="#/" class="brand">
-        <span class="brand-mark">N</span> Notux
+      <a href="#/" class="brand brand-sidebar" aria-label="Notux, inicio">
+        <span class="logo logo-full" aria-hidden="true"></span>
+        <span class="logo logo-mark" aria-hidden="true"></span>
       </a>
-      <nav class="nav" aria-label="Principal">
-        <a href="#/" data-route="inicio"><svg class="icon" width="20" height="20"><use href="#i-home"/></svg> Inicio</a>
-        <a href="#/tareas" data-route="tareas"><svg class="icon" width="20" height="20"><use href="#i-check-circle"/></svg> Tareas</a>
-        <a href="#/calendario" data-route="calendario"><svg class="icon" width="20" height="20"><use href="#i-calendar"/></svg> Calendario</a>
-        <a href="#/horario" data-route="horario"><svg class="icon" width="20" height="20"><use href="#i-clock"/></svg> Horario</a>
-        <a href="#/notas" data-route="notas"><svg class="icon" width="20" height="20"><use href="#i-note"/></svg> Notas</a>
+      <nav id="sidebar-nav" class="nav" aria-label="Principal">
+        <a href="#/" data-route="inicio"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-home"/></svg> <span class="nav-label">Inicio</span></a>
+        <a href="#/tareas" data-route="tareas"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-check-circle"/></svg> <span class="nav-label">Tareas</span></a>
+        <a href="#/calendario" data-route="calendario"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-calendar"/></svg> <span class="nav-label">Calendario</span></a>
+        <a href="#/horario" data-route="horario"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-clock"/></svg> <span class="nav-label">Horario</span></a>
+        <a href="#/notas" data-route="notas"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-note"/></svg> <span class="nav-label">Notas</span></a>
       </nav>
+      <div class="sidebar-footer">
+        <button type="button" id="btn-install" class="side-btn side-btn-install" hidden>
+          <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-download"/></svg>
+          <span class="nav-label">Instalar app</span>
+        </button>
+        <button type="button" id="btn-settings" class="side-btn">
+          <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-settings"/></svg>
+          <span class="nav-label">Ajustes</span>
+        </button>
+        <button type="button" id="sidebar-toggle" class="side-btn" aria-expanded="true" aria-controls="sidebar-nav">
+          <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-sidebar"/></svg>
+          <span class="nav-label">Contraer menú</span>
+        </button>
+      </div>
     </aside>
 
     <div class="content">
       <header class="topbar">
         <a href="#/" class="brand brand-mobile">
-          <span class="brand-mark brand-mark-sm">N</span> Notux
+          <span class="logo logo-mark" aria-hidden="true"></span> Notux
         </a>
         <div class="topbar-actions">
-          <button id="btn-install" type="button" class="btn btn-primary btn-sm" hidden>
-            <svg class="icon" width="16" height="16"><use href="#i-download"/></svg> Instalar
-          </button>
-          <button id="notes-lock" type="button" class="chip chip-warn"></button>
-          <button id="btn-settings" type="button" class="btn btn-ghost icon-btn btn-sm" aria-label="Ajustes" title="Ajustes">
+          <button id="notes-lock" type="button" class="chip chip-icon chip-warn"></button>
+          <span id="net" class="chip chip-ok"></span>
+          <button id="btn-settings-mobile" type="button" class="btn btn-ghost icon-btn btn-sm mobile-only" aria-label="Ajustes" title="Ajustes">
             <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-settings"/></svg>
           </button>
-          <span id="net" class="chip chip-ok"></span>
         </div>
       </header>
 
@@ -121,6 +136,10 @@
                     </div>
                   </div>
                   <div>
+                    <label class="label" for="task-subject">Materia (opcional)</label>
+                    <select id="task-subject" class="input" data-subject-select="none"></select>
+                  </div>
+                  <div>
                     <label class="label" for="task-note">Nota privada (opcional)</label>
                     <textarea id="task-note" class="input" rows="2" placeholder="Se cifra antes de guardarse"></textarea>
                     <p id="task-note-hint" class="muted small" hidden>
@@ -162,6 +181,10 @@
                   <option value="medium">Media</option>
                   <option value="low">Baja</option>
                 </select>
+              </div>
+              <div>
+                <label class="label" for="tasks-subject">Materia</label>
+                <select id="tasks-subject" class="input" data-subject-select="filter"></select>
               </div>
               <button type="button" id="tasks-bulk-done" class="btn btn-ghost" disabled title="Elige una prioridad para marcarlas todas como hechas">
                 Marcar como hechas
@@ -217,10 +240,10 @@
             <div class="page-head page-head-row">
               <div>
                 <h1>Horario</h1>
-                <p class="muted small">Tu horario semanal de clases o actividades.</p>
+                <p class="muted small">Tus materias o actividades y sus horarios de la semana.</p>
               </div>
               <button type="button" id="schedule-add" class="btn btn-primary">
-                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg> Agregar clase
+                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg> Agregar materia
               </button>
             </div>
 
@@ -230,22 +253,89 @@
               <div id="schedule-days" class="day-tabs" role="group" aria-label="Día"></div>
               <div id="schedule-agenda" class="stack"></div>
             </div>
+
+            <section class="section-gap" aria-labelledby="subjects-title">
+              <div class="section-head">
+                <h2 id="subjects-title">Materias</h2>
+                <button type="button" id="subjects-add" class="btn btn-ghost btn-sm">
+                  <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg> Nueva materia
+                </button>
+              </div>
+              <p class="muted small">Toca una materia para ver sus tareas y notas.</p>
+              <div id="subjects-list" class="subjects-grid"></div>
+            </section>
+          </section>
+
+          <section id="view-materia" class="view" hidden>
+            <a href="#/horario" class="back-link">
+              <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-chevron-left"/></svg> Horario y materias
+            </a>
+            <div id="subject-page" hidden>
+              <div class="page-head page-head-row">
+                <div>
+                  <h1 id="subject-page-title" class="subject-heading"></h1>
+                  <p id="subject-page-sessions" class="muted small"></p>
+                </div>
+                <button type="button" id="subject-page-edit" class="btn btn-ghost">
+                  <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-edit"/></svg> Editar materia
+                </button>
+              </div>
+              <div class="grid2">
+                <section aria-labelledby="subject-tasks-title">
+                  <h2 id="subject-tasks-title">Tareas</h2>
+                  <form id="subject-task-form" class="card form cal-add" autocomplete="off">
+                    <label class="label" for="subject-task-title">Nueva tarea de esta materia</label>
+                    <div class="cal-add-row">
+                      <input id="subject-task-title" class="input" type="text" maxlength="120" placeholder="¿Qué tienes que hacer?" required>
+                      <input id="subject-task-due" class="input input-date" type="date" aria-label="Fecha límite (opcional)">
+                      <button type="submit" class="btn btn-primary">Agregar</button>
+                    </div>
+                  </form>
+                  <div id="subject-tasks" class="stack"></div>
+                </section>
+                <section aria-labelledby="subject-notes-title">
+                  <div class="section-head">
+                    <h2 id="subject-notes-title">Notas</h2>
+                    <button type="button" id="subject-note-add" class="btn btn-ghost btn-sm">
+                      <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg> Nueva nota
+                    </button>
+                  </div>
+                  <div id="subject-notes" class="notes-board notes-board-single"></div>
+                </section>
+              </div>
+            </div>
+            <div id="subject-missing" class="placeholder" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>
+              <h2>Esta materia no existe</h2>
+              <p>Puede que la hayas eliminado. Vuelve a <a href="#/horario">Horario y materias</a>.</p>
+            </div>
           </section>
 
           <section id="view-notas" class="view" hidden>
-            <div class="page-head">
-              <h1>Notas</h1>
-              <p class="muted small">Notas libres, con foto opcional. No se cifran — para algo sensible, usa la nota privada de una tarea.</p>
+            <div class="page-head page-head-row">
+              <div>
+                <h1>Notas</h1>
+                <p class="muted small">Notas libres, con foto o audio opcional. No se cifran — para algo sensible, usa la nota privada de una tarea.</p>
+              </div>
+              <button type="button" id="note-new" class="btn btn-primary" aria-expanded="false" aria-controls="note-form">
+                <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg> Nueva nota
+              </button>
             </div>
 
-            <form id="note-form" class="card form">
-              <div id="note-edit-banner" class="edit-banner" hidden>
-                <span>Editando nota</span>
-                <button type="button" id="note-edit-cancel" class="btn btn-ghost btn-sm">Cancelar edición</button>
+            <form id="note-form" class="card form note-form" aria-labelledby="note-form-title" hidden>
+              <div class="dialog-head">
+                <h2 id="note-form-title">Nueva nota</h2>
+                <button type="button" id="note-form-close" class="btn btn-ghost icon-btn" aria-label="Cerrar sin guardar">
+                  <svg class="icon" width="18" height="18" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
               </div>
               <div>
                 <label class="label" for="note-title">Título</label>
                 <input id="note-title" class="input" type="text" maxlength="120" placeholder="¿De qué trata?" required>
+              </div>
+              <div>
+                <label class="label" for="note-subject">Materia (opcional)</label>
+                <select id="note-subject" class="input" data-subject-select="none"></select>
               </div>
               <div>
                 <label class="label" for="note-text">Texto (opcional)</label>
@@ -279,10 +369,22 @@
                 </div>
                 <audio id="note-audio-preview" controls hidden></audio>
               </div>
-              <button type="submit" id="note-submit" class="btn btn-primary">Guardar nota</button>
+              <div class="dialog-actions">
+                <button type="button" id="note-cancel" class="btn btn-ghost">Cancelar</button>
+                <button type="submit" id="note-submit" class="btn btn-primary">Guardar nota</button>
+              </div>
             </form>
 
-            <div id="notes-list" class="notes-board section-gap"></div>
+            <div class="notes-toolbar">
+              <div id="notes-filter" class="filter-chips" role="group" aria-label="Filtrar por materia"></div>
+              <p id="notes-count" class="muted small" aria-live="polite"></p>
+              <button type="button" id="notes-arrange" class="btn btn-ghost btn-sm" hidden>Ordenar</button>
+            </div>
+            <p id="notes-board-help" class="muted small notes-help" hidden>Arrastra las notas para acomodarlas donde quieras. Con el teclado: enfoca el asa <span aria-hidden="true">⠿</span> y usa las flechas (Mayús para pasos grandes).</p>
+            <div id="notes-empty"></div>
+            <div class="notes-canvas-wrap">
+              <div id="notes-list" class="notes-canvas"></div>
+            </div>
           </section>
 
         </div>
@@ -336,6 +438,10 @@
         </div>
       </div>
       <div>
+        <label class="label" for="task-edit-subject">Materia</label>
+        <select id="task-edit-subject" class="input" data-subject-select="none"></select>
+      </div>
+      <div>
         <label class="label" for="task-edit-note">Nota privada</label>
         <textarea id="task-edit-note" class="input" rows="3" placeholder="Se cifra antes de guardarse. Déjala vacía para quitarla."></textarea>
         <p id="task-edit-note-hint" class="muted small" hidden>
@@ -375,43 +481,37 @@
     </form>
   </dialog>
 
-  <dialog id="block-dialog" class="pw-dialog dialog-wide">
-    <form id="block-form" class="card form" autocomplete="off" novalidate>
-      <h2 id="block-dialog-title">Nueva clase</h2>
-      <div>
-        <label class="label" for="block-subject">Clase o actividad</label>
-        <input id="block-subject" class="input" type="text" maxlength="80" placeholder="Ej.: Cálculo diferencial" required>
-      </div>
-      <fieldset class="fieldset">
-        <legend id="block-days-legend" class="label">Días</legend>
-        <div id="block-days" class="toggle-chips"></div>
-      </fieldset>
-      <div class="form-row">
-        <div>
-          <label class="label" for="block-start">Inicio</label>
-          <input id="block-start" class="input" type="time" step="300" required>
-        </div>
-        <div>
-          <label class="label" for="block-end">Fin</label>
-          <input id="block-end" class="input" type="time" step="300" required>
-        </div>
+  <dialog id="subject-dialog" class="pw-dialog dialog-xwide" aria-labelledby="subject-dialog-title">
+    <form id="subject-form" class="card form" autocomplete="off" novalidate>
+      <h2 id="subject-dialog-title">Nueva materia</h2>
+      <div id="subject-pick-field">
+        <label class="label" for="subject-pick">Agregar a</label>
+        <select id="subject-pick" class="input"></select>
       </div>
       <div>
-        <label class="label" for="block-place">Lugar (opcional)</label>
-        <input id="block-place" class="input" type="text" maxlength="60" placeholder="Ej.: Edificio C, salón 204">
+        <label class="label" for="subject-name">Materia o actividad</label>
+        <input id="subject-name" class="input" type="text" maxlength="80" placeholder="Ej.: Cálculo diferencial" required>
       </div>
       <fieldset class="fieldset">
         <legend class="label">Color</legend>
-        <div id="block-colors" class="swatches"></div>
+        <div id="subject-colors" class="swatches"></div>
       </fieldset>
-      <p id="block-warning" class="notice-warn small" role="status" hidden></p>
-      <p id="block-error" class="task-meta overdue" role="alert" hidden></p>
+      <fieldset class="fieldset">
+        <legend class="label">Horarios — cada uno con su día, hora y lugar</legend>
+        <div id="subject-sessions" class="sessions"></div>
+        <p id="subject-sessions-empty" class="muted small" hidden>Sin horario: la materia sirve para agrupar tareas y notas.</p>
+        <button type="button" id="subject-add-session" class="btn btn-ghost btn-sm add-session">
+          <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg> Agregar otro horario
+        </button>
+      </fieldset>
+      <p id="subject-warning" class="notice-warn small" role="status" hidden></p>
+      <p id="subject-error" class="task-meta overdue" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button type="button" id="block-delete" class="btn btn-ghost btn-danger" hidden>
+        <button type="button" id="subject-delete" class="btn btn-ghost btn-danger" hidden>
           <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-trash"/></svg> Eliminar
         </button>
         <span class="spacer"></span>
-        <button type="button" id="block-cancel" class="btn btn-ghost">Cancelar</button>
+        <button type="button" id="subject-cancel" class="btn btn-ghost">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
@@ -426,9 +526,19 @@
         </button>
       </div>
 
+      <section id="install-section" class="settings-section" aria-labelledby="install-title" hidden>
+        <h3 id="install-title">Instalar Notux</h3>
+        <p class="muted small">Ábrela como una app, con su propio ícono y sin la barra del navegador. También hace falta para que el recordatorio diario llegue con la app cerrada.</p>
+        <div class="settings-actions">
+          <button type="button" id="btn-install-settings" class="btn btn-primary btn-sm">
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-download"/></svg> Instalar
+          </button>
+        </div>
+      </section>
+
       <section class="settings-section" aria-labelledby="backup-title">
         <h3 id="backup-title">Respaldo</h3>
-        <p class="muted small">Tus datos solo viven en este navegador. Descarga un respaldo (tareas, notas con fotos y audios, horario) y guárdalo en otro lugar; con él puedes restaurar todo aquí o en otro dispositivo.</p>
+        <p class="muted small">Tus datos solo viven en este navegador. Descarga un respaldo (tareas, notas con fotos y audios, materias y horario) y guárdalo en otro lugar; con él puedes restaurar todo aquí o en otro dispositivo.</p>
         <p id="backup-last" class="small"></p>
         <div class="settings-actions">
           <button type="button" id="backup-export" class="btn btn-primary btn-sm">
