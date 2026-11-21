@@ -32,10 +32,19 @@ import {
 } from './device.js';
 import { showToast } from './toast.js';
 import { $, h, icon, iconButton, emptyState } from './dom.js';
-import { LOCALE, dayDiff, relativeDate, todayISO } from './dates.js';
+import { LOCALE, dayDiff, relativeDate, todayISO, toISODay } from './dates.js';
 import { initCalendar } from './calendar.js';
 import { initNoteBoard } from './note-board.js';
-import { initSchedule, todayStatus, formatRange, formatDuration, sessionSummary } from './schedule.js';
+import {
+  initSchedule,
+  todayStatus,
+  formatRange,
+  formatDuration,
+  formatTime,
+  sessionSummary,
+  nextSession,
+  dayShort,
+} from './schedule.js';
 import {
   createBackup,
   backupFileName,
@@ -48,6 +57,8 @@ import * as reminders from './reminders.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const IDLE_LOCK_MS = 5 * 60 * 1000; // no taps or keys for this long → lock private notes
 const HIDDEN_LOCK_MS = 60 * 1000; // app in the background for this long → lock private notes
 
@@ -197,6 +208,52 @@ $('sidebar-toggle').addEventListener('click', () => {
     // ignore
   }
 });
+
+/* ---------- Theme ---------- */
+// 'light' | 'dark' | 'system'. The resolved theme lives in <html data-theme>,
+// which index.html already set before the first paint.
+const THEME_KEY = 'notux.theme';
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+
+function themeChoice() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    return saved === 'light' || saved === 'dark' ? saved : 'system';
+  } catch {
+    return 'system';
+  }
+}
+
+function applyTheme(choice = themeChoice()) {
+  const dark = choice === 'dark' || (choice === 'system' && darkQuery.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  // The sidebar button switches to the opposite of what's showing now.
+  const btn = $('btn-theme');
+  const label = dark ? 'Modo claro' : 'Modo oscuro';
+  btn.querySelector('use').setAttribute('href', dark ? '#i-sun' : '#i-moon');
+  btn.querySelector('.nav-label').textContent = label;
+  if (document.querySelector('.app').classList.contains('is-sidebar-collapsed')) btn.title = label;
+  for (const input of document.querySelectorAll('input[name="theme"]')) input.checked = input.value === choice;
+}
+
+function setTheme(choice) {
+  try {
+    if (choice === 'system') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    // storage blocked: still switch for this visit
+  }
+  applyTheme(choice);
+}
+
+darkQuery.addEventListener('change', () => applyTheme()); // follows the system while on 'system'
+$('btn-theme').addEventListener('click', () =>
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'),
+);
+for (const input of document.querySelectorAll('input[name="theme"]')) {
+  input.addEventListener('change', () => setTheme(input.value));
+}
+applyTheme();
 
 /* ---------- Routes ---------- */
 const VIEWS = ['inicio', 'tareas', 'calendario', 'horario', 'notas', 'materia'];
@@ -1064,35 +1121,32 @@ function taskItem(t, { showSubject = true } = {}) {
 }
 
 function render() {
-  const pending = tasks
-    .filter((t) => !t.done)
-    .sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9') || a.createdAt.localeCompare(b.createdAt));
-  const done = tasks.filter((t) => t.done).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
-
-  const overdue = pending.filter((t) => t.due && dayDiff(t.due) < 0).length;
-  const soon = pending.filter((t) => t.due && dayDiff(t.due) >= 0 && dayDiff(t.due) <= 7).length;
-
-  $('stat-overdue').textContent = overdue;
-  $('stat-overdue').classList.toggle('danger', overdue > 0);
-  $('stat-soon').textContent = soon;
-  $('stat-done').textContent = done.length;
-
-  $('pending').replaceChildren(...(pending.length ? pending.map(taskItem) : [emptyState('¡Nada pendiente!')]));
-  $('done-section').hidden = done.length === 0;
-  $('done').replaceChildren(...done.map(taskItem));
-
+  renderHome();
   renderTasksView();
   calendar.render();
   renderTodayPanel();
   renderSubjectViews();
 }
 
+// Task status buckets shared by Inicio's counters/agenda and Tareas' "Estado" filter.
+const STATUS_TEST = {
+  all: () => true,
+  pending: (t) => !t.done,
+  overdue: (t) => !t.done && !!t.due && dayDiff(t.due) < 0,
+  today: (t) => !t.done && !!t.due && dayDiff(t.due) === 0,
+  week: (t) => !t.done && !!t.due && dayDiff(t.due) >= 0 && dayDiff(t.due) <= 7,
+  nodate: (t) => !t.done && !t.due,
+  done: (t) => t.done,
+};
+
 function renderTasksView() {
   const search = $('tasks-search').value.trim().toLowerCase();
+  const status = $('tasks-status').value;
   const priorityFilter = $('tasks-filter').value;
   const subjectFilter = $('tasks-subject').value; // 'all' | 'none' | id
 
   const filtered = tasks
+    .filter(STATUS_TEST[status] ?? STATUS_TEST.all)
     .filter((t) => priorityFilter === 'all' || t.priority === priorityFilter)
     .filter((t) =>
       subjectFilter === 'all'
@@ -1103,16 +1157,182 @@ function renderTasksView() {
     )
     .filter((t) => t.title.toLowerCase().includes(search))
     .sort(
-      (a, b) =>
-        Number(a.done) - Number(b.done) ||
-        (a.due ?? '9').localeCompare(b.due ?? '9') ||
-        a.createdAt.localeCompare(b.createdAt),
+      status === 'done'
+        ? (a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '') // most recently finished first
+        : (a, b) =>
+            Number(a.done) - Number(b.done) ||
+            (a.due ?? '9').localeCompare(b.due ?? '9') ||
+            a.createdAt.localeCompare(b.createdAt),
     );
 
+  $('tasks-count').textContent = tasks.length
+    ? filtered.length === tasks.length
+      ? `${tasks.length} tarea${tasks.length === 1 ? '' : 's'}`
+      : `${filtered.length} de ${tasks.length} tareas`
+    : '';
   $('tasks-list').replaceChildren(
-    ...(filtered.length ? filtered.map(taskItem) : [emptyState('No se encontraron tareas.')]),
+    ...(filtered.length
+      ? filtered.map((t) => taskItem(t))
+      : [emptyState(tasks.length ? 'No hay tareas con estos filtros.' : 'Aún no tienes tareas. Agrega la primera.')]),
   );
 }
+
+/* ---------- Inicio ---------- */
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const AGENDA_GROUPS = [
+  { key: 'overdue', title: 'Vencidas', test: (d) => d !== null && d < 0 },
+  { key: 'today', title: 'Hoy', test: (d) => d === 0 },
+  { key: 'tomorrow', title: 'Mañana', test: (d) => d === 1 },
+  { key: 'week', title: 'Esta semana', test: (d) => d !== null && d >= 2 && d <= 7 },
+  { key: 'later', title: 'Más adelante', test: (d) => d !== null && d > 7, limit: 5 },
+  { key: 'nodate', title: 'Sin fecha', test: (d) => d === null, limit: 5 },
+];
+
+function renderHome() {
+  const count = (status) => tasks.filter(STATUS_TEST[status]).length;
+  const overdue = count('overdue');
+  $('stat-overdue').textContent = overdue;
+  $('stat-overdue').classList.toggle('danger', overdue > 0);
+  $('stat-today').textContent = count('today');
+  $('stat-soon').textContent = count('week');
+  $('stat-done').textContent = count('done');
+
+  const pending = tasks
+    .filter((t) => !t.done)
+    .sort(
+      (a, b) =>
+        (a.due ?? '9').localeCompare(b.due ?? '9') ||
+        (PRIORITY_RANK[a.priority] ?? 1) - (PRIORITY_RANK[b.priority] ?? 1) ||
+        a.createdAt.localeCompare(b.createdAt),
+    );
+  const groups = AGENDA_GROUPS.map((g) => ({
+    ...g,
+    items: pending.filter((t) => g.test(t.due ? dayDiff(t.due) : null)),
+  })).filter((g) => g.items.length);
+
+  $('home-agenda').replaceChildren(
+    ...(groups.length
+      ? groups.map((g) => {
+          const shown = g.limit ? g.items.slice(0, g.limit) : g.items;
+          const more = g.items.length - shown.length;
+          return h(
+            'section',
+            { class: `agenda-group agenda-${g.key}`, 'aria-label': `${g.title}: ${g.items.length}` },
+            h(
+              'h3',
+              { class: 'agenda-group-title' },
+              g.title,
+              h('span', { class: 'filter-count' }, String(g.items.length)),
+            ),
+            h('div', { class: 'stack' }, ...shown.map((t) => taskItem(t))),
+            ...(more
+              ? [
+                  h(
+                    'a',
+                    {
+                      href: '#/tareas',
+                      class: 'muted small link-quiet agenda-more',
+                      'data-status': g.key === 'nodate' ? 'nodate' : 'pending',
+                    },
+                    `y ${plural(more, 'tarea más', 'tareas más')} →`,
+                  ),
+                ]
+              : []),
+          );
+        })
+      : [emptyState('¡Nada pendiente! Agrega una tarea arriba cuando la tengas.')]),
+  );
+
+  renderHomeSubjects();
+  renderHomeNotes();
+}
+
+function nextSessionLabel(next) {
+  if (!next) return 'Sin horario';
+  const { block, inDays, ongoing } = next;
+  if (ongoing) return `En clase ahora, hasta las ${formatTime(block.end)}`;
+  const when = inDays === 0 ? 'Hoy' : inDays === 1 ? 'Mañana' : capitalize(dayShort(block.day));
+  return `Próxima clase: ${when} ${formatTime(block.start)}${block.place ? ` · ${block.place}` : ''}`;
+}
+
+function renderHomeSubjects() {
+  const subjects = schedule.subjects();
+  $('home-subjects').replaceChildren(
+    ...(subjects.length
+      ? subjects.map((s) => {
+          const { pending } = subjectCounts(s.id);
+          const next = nextSession(schedule.blocksOf(s.id));
+          return h(
+            'a',
+            { href: `#/materia/${s.id}`, class: `card home-subject blk-${s.color}${next?.ongoing ? ' is-now' : ''}` },
+            h(
+              'span',
+              { class: 'home-subject-top' },
+              h('span', { class: 'task-title' }, s.name),
+              ...(pending ? [h('span', { class: 'filter-count' }, String(pending))] : []),
+            ),
+            h('span', { class: 'task-meta' }, nextSessionLabel(next)),
+            h('span', { class: 'sr-only' }, `. ${plural(pending, 'tarea pendiente', 'tareas pendientes')}.`),
+          );
+        })
+      : [
+          h(
+            'p',
+            { class: 'card empty' },
+            icon('book'),
+            h(
+              'span',
+              {},
+              'Agrupa tareas, notas y horarios por materia. ',
+              h('a', { href: '#/horario' }, 'Agregar una'),
+            ),
+          ),
+        ]),
+  );
+}
+
+const noteDate = (n) => n.updatedAt ?? n.createdAt;
+
+function renderHomeNotes() {
+  const recent = [...notes].sort((a, b) => noteDate(b).localeCompare(noteDate(a))).slice(0, 4);
+  $('home-notes').replaceChildren(
+    ...(recent.length
+      ? recent.map((n) => {
+          const tag = subjectTag(n.subjectId);
+          return h(
+            'div',
+            { class: 'card home-note' },
+            h(
+              'a',
+              {
+                href: '#/notas',
+                class: 'home-note-link',
+                onclick: () => requestAnimationFrame(() => noteBoard.reveal(n.id)),
+              },
+              h('span', { class: 'task-title' }, n.title),
+              ...(n.text ? [h('span', { class: 'home-note-text' }, n.text)] : []),
+            ),
+            h(
+              'span',
+              { class: 'task-meta-row' },
+              h('span', { class: 'task-meta' }, relativeDate(toISODay(new Date(noteDate(n))))),
+              ...(n.photo ? [h('span', { class: 'task-meta' }, '· foto')] : []),
+              ...(n.audio ? [h('span', { class: 'task-meta' }, '· audio')] : []),
+              ...(tag ? [tag] : []),
+            ),
+          );
+        })
+      : [emptyState('Aún no tienes notas.', 'note')]),
+  );
+}
+
+// Inicio's counters and "Ver todas" links open Tareas already filtered.
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href="#/tareas"][data-status]');
+  if (!link) return;
+  $('tasks-status').value = link.dataset.status;
+  renderTasksView();
+});
 
 function noteItem(n, { showSubject = true, movable = false } = {}) {
   const tag = showSubject ? subjectTag(n.subjectId) : null;
@@ -1241,6 +1461,7 @@ function renderNotesView() {
   $('notes-board-help').hidden = shown.length === 0;
   $('notes-arrange').hidden = !notes.some((n) => n.board);
   noteBoard.render(shown.map((n) => ({ note: n, el: noteItem(n, { movable: true }) })));
+  renderHomeNotes();
 }
 
 /* ---------- Notes canvas ---------- */
@@ -1467,13 +1688,17 @@ $('today-due-link').addEventListener('click', () => calendar.select(todayISO()))
 setInterval(() => {
   renderToday();
   renderTodayPanel();
+  renderHomeSubjects();
   schedule.render();
 }, 60_000);
 
 const todayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
 
 function renderToday() {
-  $('today').textContent = todayFmt.format(new Date()).replace(',', '');
+  const hour = new Date().getHours();
+  $('greeting').textContent =
+    hour < 5 ? 'Buenas noches' : hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
+  $('today').textContent = capitalize(todayFmt.format(new Date()).replace(',', ''));
 }
 
 function renderNetwork() {
@@ -1724,6 +1949,36 @@ function updateBulkDoneButtonState() {
 }
 
 $('tasks-search').addEventListener('input', renderTasksView);
+$('tasks-status').addEventListener('change', renderTasksView);
+
+// On phones and tablets the form folds away behind "Nueva tarea"; on wide
+// screens it sits next to the list and the button is hidden.
+$('task-new').addEventListener('click', () => {
+  const form = $('task-form');
+  const open = !form.classList.contains('is-open');
+  form.classList.toggle('is-open', open);
+  $('task-new').setAttribute('aria-expanded', String(open));
+  if (open) $('task-title').focus();
+});
+
+$('home-add-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('home-add-title');
+  const title = input.value.trim();
+  if (!title) {
+    input.focus();
+    return;
+  }
+  try {
+    await addTask({ title, due: $('home-add-due').value });
+  } catch (err) {
+    notifyTaskSaveError(err);
+    return;
+  }
+  e.target.reset();
+  input.focus();
+  showToast(`Tarea «${title}» agregada.`);
+});
 $('tasks-subject').addEventListener('change', renderTasksView);
 $('tasks-filter').addEventListener('change', () => {
   renderTasksView();

@@ -25,28 +25,30 @@
   --danger-ink: #dc2626; /* red text on a surface: overdue dates, destructive actions */
   --logo-ink: #3917db; /* the logo's own blue */
 
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface: #0b1220;
-    --surface-2: #111a2e;
-    --surface-3: #1a2540;
-    --ink: #e2e8f0;
-    --ink-muted: #94a3b8;
-    --line: #243149;
+/* Dark theme. <html data-theme> is set before first paint by the script in
+   index.html (from the saved choice, or the system setting when there's none)
+   and kept in sync by app.js. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #0b1220;
+  --surface-2: #111a2e;
+  --surface-3: #1a2540;
+  --ink: #e2e8f0;
+  --ink-muted: #94a3b8;
+  --line: #243149;
 
-    --nav-active-bg: rgb(49 46 129 / 0.4);
-    --nav-active-ink: var(--brand-200);
-    --brand-ink: var(--brand-200); /* brand-600 falls below 3:1 on the dark surface */
-    --ok-bg: rgb(6 78 59 / 0.4);
-    --ok-ink: #a7f3d0;
-    --warn-bg: rgb(120 53 15 / 0.4);
-    --warn-ink: #fde68a;
-    --danger-ink: #f87171; /* #dc2626 is ~3.6:1 on the dark surface */
-    --logo-ink: #a397ff; /* the logo's blue is ~2:1 on the dark surface */
-  }
+  --nav-active-bg: rgb(49 46 129 / 0.4);
+  --nav-active-ink: var(--brand-200);
+  --brand-ink: var(--brand-200); /* brand-600 falls below 3:1 on the dark surface */
+  --ok-bg: rgb(6 78 59 / 0.4);
+  --ok-ink: #a7f3d0;
+  --warn-bg: rgb(120 53 15 / 0.4);
+  --warn-ink: #fde68a;
+  --danger-ink: #f87171; /* #dc2626 is ~3.6:1 on the dark surface */
+  --logo-ink: #a397ff; /* the logo's blue is ~2:1 on the dark surface */
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -195,7 +197,7 @@ a { color: inherit; }
 .brand-mobile { font-size: 1rem; }
 
 .main { flex: 1; padding: 1rem 1rem 6rem; }
-.container { max-width: 64rem; margin: 0 auto; }
+.container { max-width: 112rem; margin: 0 auto; }
 
 .tabbar {
   position: fixed;
@@ -301,7 +303,7 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 
 .form.tasks-toolbar { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
-.tasks-search-field { flex: 1; min-width: 12rem; }
+.tasks-search-field { flex: 1; min-width: 10rem; }
 
 .pw-dialog { border: 0; padding: 0; background: transparent; max-width: 22rem; width: calc(100% - 2rem); }
 .pw-dialog::backdrop { background: rgb(15 23 42 / 0.6); }
@@ -401,7 +403,7 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
   cursor: pointer;
 }
 .toast-action { color: var(--brand-200); }
-@media (prefers-color-scheme: dark) { .toast-action { color: var(--brand-700); } } /* toast is light on dark theme */
+[data-theme="dark"] .toast-action { color: var(--brand-700); } /* toast is light on dark theme */
 .toast-error .toast-action { color: #fff; text-decoration: underline; }
 .toast-close { font-size: 1.125rem; line-height: 1; opacity: 0.7; }
 .toast-action:hover, .toast-close:hover { background: rgb(255 255 255 / 0.12); opacity: 1; }
@@ -411,8 +413,64 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 .page-head { margin-bottom: 1.5rem; }
 .page-head .muted { font-size: 0.875rem; }
 
-.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
-.stat { display: flex; flex-direction: column; padding-block: 0.75rem; text-align: center; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+@media (max-width: 639px) {
+  /* Phones: four compact counters in one row instead of a 2×2 block. */
+  .stats { gap: 0.5rem; }
+  .stats .stat { padding: 0.5rem 0.25rem; }
+  .stats .stat-num { font-size: 1.25rem; line-height: 1.75rem; }
+  .stats .small { font-size: 0.6875rem; line-height: 1.2; }
+}
+.stat { display: flex; flex-direction: column; padding-block: 0.75rem; color: inherit; text-align: center; text-decoration: none; transition: box-shadow 0.15s, transform 0.15s; }
+a.stat:hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.1); transform: translateY(-1px); }
+
+/* Inicio */
+.home-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; margin-bottom: 1.5rem; }
+.home-head .muted { font-size: 0.875rem; }
+.home-add { display: flex; flex: 1; flex-wrap: wrap; gap: 0.5rem; max-width: 40rem; }
+.home-add .input:first-of-type { flex: 1; min-width: 12rem; }
+@media (max-width: 639px) {
+  .home-add .input:first-of-type { flex-basis: 100%; }
+  .home-add .input-date { flex: 1; }
+}
+.home-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 1024px) { .home-grid { grid-template-columns: minmax(0, 2.2fr) minmax(18rem, 1fr); align-items: start; } }
+.home-main, .home-side { display: flex; min-width: 0; flex-direction: column; gap: 1.5rem; }
+.home-main .today-panel { margin-bottom: 0; }
+.link-quiet { text-decoration: none; }
+.link-quiet:hover { text-decoration: underline; }
+
+.agenda-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem 1rem; align-items: start; margin-top: 0.5rem; }
+.agenda-groups > .empty { grid-column: 1 / -1; }
+.agenda-group-title { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-muted); }
+.agenda-overdue .agenda-group-title { color: var(--danger-ink); }
+.agenda-today .agenda-group-title { color: var(--brand-ink); }
+.agenda-more { display: inline-block; margin-top: 0.5rem; }
+
+.home-subject { display: flex; flex-direction: column; gap: 0.125rem; border-left: 4px solid var(--blk); padding: 0.625rem 0.875rem; color: inherit; text-decoration: none; transition: box-shadow 0.15s; }
+.home-subject:hover { box-shadow: 0 6px 16px rgb(0 0 0 / 0.1); }
+.home-subject.is-now { background: color-mix(in srgb, var(--blk) 10%, var(--surface-2)); }
+.home-subject-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.home-subject .task-meta { overflow-wrap: anywhere; }
+.home-note { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 0.875rem; }
+.home-note-link { display: flex; flex-direction: column; color: inherit; text-decoration: none; }
+.home-note-link:hover .task-title { text-decoration: underline; }
+.home-note-text { display: -webkit-box; overflow: hidden; font-size: 0.8125rem; color: var(--ink-muted); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+
+/* Tareas: formulario al lado de la lista en pantallas anchas */
+.tasks-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.tasks-main { min-width: 0; }
+.task-form-panel h2 { margin: 0; }
+.tasks-count { margin: 1rem 0 0.5rem; }
+@media (max-width: 1023px) {
+  .task-form-panel:not(.is-open) { display: none; }
+  .task-form-panel.is-open { animation: unfold 0.2s ease-out; }
+}
+@media (min-width: 1024px) {
+  .tasks-layout { grid-template-columns: minmax(19rem, 24rem) minmax(0, 1fr); }
+  .tasks-aside { position: sticky; top: 5rem; }
+  .page-head .narrow-only { display: none; }
+}
 .stat-num { font-size: 1.5rem; line-height: 2rem; font-weight: 700; }
 .stat-num.danger { color: var(--danger-ink); }
 

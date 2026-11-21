@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v12';
+const CACHE_NAME = 'notux-v14';
 const CORE_ASSETS = [
   './',
   './index.html',

@@ -42,6 +42,24 @@ export function sessionSummary(subjectBlocks) {
     .join(' · ');
 }
 
+/**
+ * The next time any of these blocks happens, from `now`: a class in progress
+ * counts as next. Returns { block, inDays, ongoing } or null if there are none.
+ */
+export function nextSession(subjectBlocks, now = new Date()) {
+  const today = now.getDay();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  let best = null;
+  for (const b of subjectBlocks) {
+    let inDays = (b.day - today + 7) % 7;
+    const ongoing = inDays === 0 && toMinutes(b.start) <= minutes && minutes < toMinutes(b.end);
+    if (inDays === 0 && !ongoing && toMinutes(b.end) <= minutes) inDays = 7; // already over today
+    const key = inDays * 1440 + toMinutes(b.start);
+    if (!best || key < best.key) best = { block: b, inDays, ongoing, key };
+  }
+  return best && { block: best.block, inDays: best.inDays, ongoing: best.ongoing };
+}
+
 export function blocksOn(blocks, day) {
   return blocks.filter((b) => b.day === day).sort(byStart);
 }
