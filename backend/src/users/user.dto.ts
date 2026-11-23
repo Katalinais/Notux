@@ -13,6 +13,12 @@ export class UserDto {
   @ApiProperty({ type: String, nullable: true, example: 'https://lh3.googleusercontent.com/a/...' })
   picture!: string | null;
 
+  @ApiProperty({
+    enum: ['google', 'password'],
+    description: 'How this account signs in. Password accounts have no Google Drive.',
+  })
+  provider!: 'google' | 'password';
+
   @ApiProperty({ description: 'We hold a usable Google refresh token with the drive.file scope.' })
   driveConnected!: boolean;
 }

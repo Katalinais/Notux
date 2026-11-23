@@ -12,7 +12,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/env';
-import { ExchangeDto, RefreshTokenDto, SessionDto, TokenPairDto } from './auth.dto';
+import { ExchangeDto, LoginDto, RefreshTokenDto, SessionDto, TokenPairDto } from './auth.dto';
 import { AuthService } from './auth.service';
 import { OAUTH_STATE_TTL_MS } from './oauth-state';
 
@@ -80,6 +80,17 @@ export class AuthController {
   @ApiUnauthorizedResponse({ description: '`{ code: "INVALID_LOGIN_CODE" }`' })
   exchange(@Body() body: ExchangeDto): Promise<SessionDto> {
     return this.auth.exchange(body.code);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  // Tighter than the rest of /auth: guessing passwords should be slow.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Sign in with username and password.' })
+  @ApiOkResponse({ type: SessionDto })
+  @ApiUnauthorizedResponse({ description: '`{ code: "INVALID_CREDENTIALS" }`' })
+  login(@Body() body: LoginDto): Promise<SessionDto> {
+    return this.auth.loginWithPassword(body.username, body.password);
   }
 
   @Post('refresh')

@@ -4,10 +4,12 @@ import { ApiError, ErrorCode } from '../common/api-error';
 import { randomToken } from '../common/crypto';
 import { APP_CONFIG, type AppConfig } from '../config/env';
 import { GoogleOAuthService } from '../google/google-oauth.service';
+import type { User } from '@prisma/client';
 import { toUserDto, UsersService } from '../users/users.service';
 import { JWT_AUDIENCE, JWT_ISSUER } from './access-token.guard';
 import type { SessionDto, TokenPairDto } from './auth.dto';
 import { LoginCodeService } from './login-code.service';
+import { dummyPasswordHash, verifyPassword } from './password';
 import { OAUTH_STATE_TTL_MS, openState, sealState } from './oauth-state';
 import { isAllowedRedirect, withParams } from './redirect';
 import { RefreshTokenService } from './refresh-token.service';
@@ -78,6 +80,20 @@ export class AuthService {
     const userId = await this.loginCodes.consume(code);
     const user = await this.users.findById(userId);
     if (!user) throw new ApiError(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_LOGIN_CODE, 'Invalid login code');
+    return this.startSession(user);
+  }
+
+  async loginWithPassword(username: string, password: string): Promise<SessionDto> {
+    const user = await this.users.findByUsername(username);
+    // Always run one scrypt, so an unknown username isn't faster to reject.
+    const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyPasswordHash()));
+    if (!user?.passwordHash || !ok) {
+      throw new ApiError(HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIALS, 'Invalid username or password');
+    }
+    return this.startSession(user);
+  }
+
+  private async startSession(user: User): Promise<SessionDto> {
     const refreshToken = await this.refreshTokens.issue(user.id);
     return { ...(await this.accessToken(user.id)), refreshToken, user: toUserDto(user) };
   }

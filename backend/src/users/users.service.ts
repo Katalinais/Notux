@@ -4,6 +4,7 @@ import { encrypt } from '../common/crypto';
 import { APP_CONFIG, type AppConfig } from '../config/env';
 import { DRIVE_FILE_SCOPE, type GoogleIdentity } from '../google/google-oauth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizeUsername } from '../auth/password';
 import type { UserDto } from './user.dto';
 
 export const REFRESH_TOKEN_AAD = 'google-refresh-token';
@@ -18,6 +19,7 @@ export function toUserDto(user: User): UserDto {
     email: user.email,
     name: user.name,
     picture: user.picture,
+    provider: user.googleSub ? 'google' : 'password',
     driveConnected: hasDriveAccess(user),
   };
 }
@@ -31,6 +33,10 @@ export class UsersService {
 
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  findByUsername(username: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { username: normalizeUsername(username) } });
   }
 
   /** Creates or updates the user from a Google login. Keeps the stored refresh token when Google sends none. */

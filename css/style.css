@@ -367,6 +367,20 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 .btn-google[aria-busy="true"] { cursor: progress; }
 .account-body > .btn-sm { align-self: flex-start; }
 
+/* Sign-in screen (js/login.js) */
+.pw-dialog.login-dialog { max-width: 24rem; }
+.login { gap: 1rem; padding: 1.5rem; }
+.login-logo { align-self: center; width: 7.5rem; }
+.login-head { text-align: center; }
+.login-head h2 { margin-bottom: 0.25rem; }
+.login-google { align-self: stretch; justify-content: center; }
+.login-divider { display: flex; align-items: center; gap: 0.75rem; color: var(--ink-muted); font-size: 0.75rem; }
+.login-divider::before, .login-divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.login-form { display: flex; flex-direction: column; gap: 0.75rem; }
+.login-form .btn-primary { justify-content: center; }
+.login-form .btn-primary[aria-busy="true"], .login-google[aria-busy="true"] { cursor: progress; }
+.login-skip { align-self: center; }
+
 /* Respaldo → Google Drive */
 .drive-backups { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; border-top: 1px dashed var(--line); padding-top: 0.75rem; }
 .drive-title { display: flex; align-items: center; gap: 0.375rem; margin: 0; font-size: 0.8125rem; font-weight: 600; }

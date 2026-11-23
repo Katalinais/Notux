@@ -12,7 +12,12 @@ datasource db {
 
 model User {
   id                    String   @id @default(cuid())
-  googleSub             String   @unique
+  /// Google account id. Null for users who only sign in with username and password.
+  googleSub             String?  @unique
+  /// Lowercase login name for username/password sign-in. Null for Google-only users.
+  username              String?  @unique
+  /// scrypt hash of the password (see src/auth/password.ts). Never the password itself.
+  passwordHash          String?
   email                 String
   name                  String?
   picture               String?

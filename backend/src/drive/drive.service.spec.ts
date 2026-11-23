@@ -14,6 +14,8 @@ function makeUser(overrides: Partial<User> = {}): User {
   return {
     id: 'user-1',
     googleSub: 'sub-1',
+    username: null,
+    passwordHash: null,
     email: 'estudiante@example.com',
     name: null,
     picture: null,

@@ -7,6 +7,8 @@
 //
 // "Google" is fake: GET /auth/google redirects straight back to the app with a
 // login code for a test user. Drive backups are kept in memory.
+// Username/password: POST /auth/login accepts demo / demo1234 (no Drive, like
+// password accounts on the real API).
 //
 // Environment variables:
 //   PORT              port to listen on (default 3100)
@@ -44,11 +46,18 @@ const state = {
 };
 
 const USER = { id: 'mock-user-1', email: 'estudiante@example.com', name: 'Estudiante de Prueba', picture: null };
-const userView = () => ({ ...USER, driveConnected: state.drive !== 'unauthorized' });
+const PASSWORD_USER = { id: 'mock-user-2', email: 'demo@notux.demo', name: 'Usuario Demo', picture: null };
+const PASSWORD_LOGIN = { username: 'demo', password: 'demo1234' };
+const userView = (who = 'google') =>
+  who === 'password'
+    ? { ...PASSWORD_USER, provider: 'password', driveConnected: false }
+    : { ...USER, provider: 'google', driveConnected: state.drive !== 'unauthorized' };
 
 const loginCodes = new Map(); // code -> expiresAt
 const accessTokens = new Map(); // token -> expiresAt
 const refreshTokens = new Map(); // token -> { family, revoked, expiresAt }
+const families = new Map(); // family -> 'google' | 'password' (whose session it is)
+const accessFamily = new Map(); // access token -> family
 const backups = []; // newest first: { id, name, createdTime, size, body }
 
 const token = (bytes = 24) => randomBytes(bytes).toString('base64url');
@@ -121,10 +130,12 @@ async function readJson(req) {
 }
 
 /* ---------- Auth ---------- */
-function issueTokens(family = token(8)) {
+function issueTokens(family = token(8), who = 'google') {
   const accessToken = `mock-access.${token()}`;
   const refreshToken = token(32);
+  if (!families.has(family)) families.set(family, who);
   accessTokens.set(accessToken, Date.now() + state.accessTtl * 1000);
+  accessFamily.set(accessToken, family);
   refreshTokens.set(refreshToken, { family, revoked: false, expiresAt: Date.now() + REFRESH_TTL_MS });
   return { accessToken, refreshToken, expiresIn: state.accessTtl };
 }
@@ -133,6 +144,7 @@ function requireUser(req) {
   const match = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
   const expiresAt = match && accessTokens.get(match[1]);
   if (!expiresAt || expiresAt < Date.now()) throw new HttpError(401, 'Unauthorized');
+  return families.get(accessFamily.get(match[1])) ?? 'google';
 }
 
 function requireDrive() {
@@ -204,6 +216,17 @@ async function route(req, res, url) {
     return send(req, res, 200, { ...issueTokens(), user: userView() });
   }
 
+  if (key === 'POST /auth/login') {
+    const { username, password } = await readJson(req);
+    if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
+      throw new HttpError(400, 'username and password are required');
+    }
+    if (username.trim().toLowerCase() !== PASSWORD_LOGIN.username || password !== PASSWORD_LOGIN.password) {
+      throw new HttpError(401, 'Invalid username or password', 'INVALID_CREDENTIALS');
+    }
+    return send(req, res, 200, { ...issueTokens(undefined, 'password'), user: userView('password') });
+  }
+
   if (key === 'POST /auth/refresh') {
     const { refreshToken } = await readJson(req);
     const record = refreshTokens.get(refreshToken);
@@ -228,12 +251,13 @@ async function route(req, res, url) {
   }
 
   if (key === 'GET /users/me') {
-    requireUser(req);
-    return send(req, res, 200, userView());
+    return send(req, res, 200, userView(requireUser(req)));
   }
 
   if (pathname === '/drive/backups' || pathname.startsWith('/drive/backups/')) {
-    requireUser(req);
+    if (requireUser(req) === 'password') {
+      throw new HttpError(403, 'Google Drive is not authorized', 'DRIVE_NOT_AUTHORIZED');
+    }
     const id = pathname === '/drive/backups' ? null : decodeURIComponent(pathname.slice('/drive/backups/'.length));
 
     if (req.method === 'GET' && id === null) {

@@ -1,4 +1,5 @@
-// Optional account: sign-in with Google through the Notux API (backend/).
+// Optional account: sign-in with Google, or with username and password, through
+// the Notux API (backend/).
 // Notux never requires an account: with an empty API_URL (js/config.js)
 // everything here is a no-op and isConfigured() is false.
 //
@@ -24,6 +25,8 @@ const LOCK_NAME = 'notux-auth-refresh';
 const CALLBACK_PARAMS = ['login_code', 'auth_error'];
 const EXPIRY_MARGIN_MS = 30_000; // refresh up to this long before the token actually expires
 const LOGOUT_TIMEOUT_MS = 3000;
+// The free Render instance sleeps when idle and takes up to ~1 min to wake up.
+const LOGIN_TIMEOUT_MS = 70_000;
 
 export const isConfigured = isApiConfigured;
 
@@ -86,7 +89,7 @@ function setUser(user, event) {
   }
 }
 
-/** The signed-in user ({ id, email, name, picture, driveConnected }) or null. Known synchronously, even offline. */
+/** The signed-in user ({ id, email, name, picture, provider, driveConnected }) or null. Known synchronously, even offline. */
 export function getUser() {
   return currentUser;
 }
@@ -227,7 +230,12 @@ export async function initAuth() {
 
   const previous = readStored();
   try {
-    const result = await apiRequest('/auth/exchange', { method: 'POST', body: { code }, auth: false });
+    const result = await apiRequest('/auth/exchange', {
+      method: 'POST',
+      body: { code },
+      auth: false,
+      timeout: LOGIN_TIMEOUT_MS,
+    });
     saveSession(result);
     // Signing in again (e.g. to reconnect Drive) replaces the previous session.
     if (previous && previous.refreshToken !== result.refreshToken) sendLogout(previous.refreshToken);
@@ -236,6 +244,25 @@ export async function initAuth() {
   } catch (err) {
     return { redirected: true, error: err instanceof ApiError ? err.code : 'server_error' };
   }
+}
+
+/**
+ * Signs in with username and password (accounts created on the server; they
+ * have no Google Drive). Rejects with ApiError: code 'INVALID_CREDENTIALS' for
+ * a wrong username or password, 'HTTP_429' after too many attempts.
+ */
+export async function signInWithPassword(username, password) {
+  const previous = readStored();
+  const result = await apiRequest('/auth/login', {
+    method: 'POST',
+    body: { username, password },
+    auth: false,
+    timeout: LOGIN_TIMEOUT_MS,
+  });
+  saveSession(result);
+  if (previous && previous.refreshToken !== result.refreshToken) sendLogout(previous.refreshToken);
+  setUser(result.user, 'SIGNED_IN');
+  return result.user;
 }
 
 /** Leaves the page for Google; the API sends the user back to this same page. */
@@ -285,5 +312,5 @@ window.addEventListener('storage', (e) => {
 export function profileOf(user) {
   const email = user?.email ?? '';
   const name = user?.name?.trim() || email.split('@')[0] || 'Tu cuenta';
-  return { name, email, avatarUrl: user?.picture || null };
+  return { name, email, avatarUrl: user?.picture || null, provider: user?.provider ?? 'google' };
 }

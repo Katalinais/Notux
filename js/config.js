@@ -14,6 +14,6 @@
 // the allowed sign-in redirects). Nothing here is secret: it ships to every browser.
 const LOCAL = ['localhost', '127.0.0.1'].includes(location.hostname);
 
-// Local development uses the backend on port 3000; anywhere else (e.g. GitHub
-// Pages) stays without an account until a deployed API URL is set here.
-export const API_URL = LOCAL ? 'http://localhost:3000' : '';
+// Local development uses the backend on port 3000; the deployed app (Vercel)
+// uses the API on Render.
+export const API_URL = LOCAL ? 'http://localhost:3000' : 'https://notux.onrender.com';

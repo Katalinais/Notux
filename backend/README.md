@@ -52,6 +52,7 @@ Luego sirve el frontend (desde la raíz del repo, `npm start` lo abre en `http:/
 | `npm run format`         | Prettier                                                          |
 | `npm run prisma:migrate` | Crea/aplica migraciones en desarrollo                             |
 | `npm run prisma:deploy`  | Aplica migraciones en producción                                  |
+| `npm run db:seed`        | Crea los usuarios de demostración (usuario y contraseña)          |
 
 Las pruebas e2e usan una base separada, `notux_test`, en el mismo contenedor (se crea sola). Ninguna prueba necesita credenciales reales de Google.
 
@@ -100,6 +101,7 @@ Errores con la forma de Nest: `{ statusCode, message, error, code? }`. El fronte
 | `GET /health`                 | —      | 200 `{ status: "ok", info: { database: { status: "up" } } }`; 503 si la base de datos no responde                                                 |
 | `GET /auth/google?redirect=…` | —      | 302 a Google. `redirect` debe pertenecer a `FRONTEND_ORIGINS` (si no, 400 `INVALID_REDIRECT`)                                                     |
 | `GET /auth/google/callback`   | —      | Lo llama Google. 302 a `<redirect>?login_code=…` o `<redirect>?auth_error=access_denied\|server_error\|invalid_state`                             |
+| `POST /auth/login`            | —      | `{ username, password }` → `{ accessToken, refreshToken, expiresIn, user }`. 401 `INVALID_CREDENTIALS`; máximo 5 intentos por minuto              |
 | `POST /auth/exchange`         | —      | `{ code }` → `{ accessToken, refreshToken, expiresIn, user }`. Código de un solo uso, válido 60 s. 401 `INVALID_LOGIN_CODE`                       |
 | `POST /auth/refresh`          | —      | `{ refreshToken }` → `{ accessToken, refreshToken, expiresIn }` (rota el token). 401 `INVALID_REFRESH_TOKEN`                                      |
 | `POST /auth/logout`           | —      | `{ refreshToken }` → 204 (idempotente)                                                                                                            |
@@ -119,6 +121,12 @@ Límite de peticiones: 120 por minuto por IP en general y 20 por minuto en `/aut
 2. El backend genera PKCE y un `state` cifrado (con la URL de vuelta y una marca de tiempo; caduca en 10 min), guarda un _nonce_ en una cookie `httpOnly` limitada a `/auth/google` (protege contra CSRF de login; no la usa el frontend) y redirige a Google.
 3. Google vuelve a `/auth/google/callback`; el backend canjea el código, crea o actualiza el usuario, guarda cifrado el refresh token de Google y redirige al frontend con un `login_code` de un solo uso (60 s).
 4. El frontend lo canjea en `POST /auth/exchange` por sus tokens.
+
+### Usuario y contraseña
+
+Además de Google hay cuentas con usuario y contraseña, creadas en el servidor (no hay registro público). La contraseña se guarda solo como hash scrypt, y un usuario inexistente tarda lo mismo en rechazarse que una contraseña equivocada. Estas cuentas no tienen Google Drive: `user.provider` es `"password"` y `driveConnected` es `false`.
+
+`npm run db:seed` crea los usuarios de demostración (`ana`, `luis`) en la base de `DATABASE_URL` con contraseñas aleatorias que imprime una sola vez. Si ya existen no los toca; `SEED_RESET_PASSWORDS=true npm run db:seed` les da contraseñas nuevas y cierra sus sesiones.
 
 ## Despliegue
 

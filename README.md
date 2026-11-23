@@ -91,15 +91,20 @@ La migración a la versión 6 convierte cada clase antigua (que tenía su propio
 
 ## Cuenta y Google Drive
 
-Opcional. Con `API_URL` vacía en `js/config.js` (así viene) la app funciona exactamente igual que siempre, sin cuentas y sin contactar ningún servidor; Ajustes → Cuenta solo lo indica.
+Opcional. Con `API_URL` vacía en `js/config.js` la app funciona exactamente igual que siempre, sin cuentas y sin contactar ningún servidor; Ajustes → Cuenta solo lo indica. La copia publicada usa la API en `https://notux.onrender.com` (en `localhost`, `http://localhost:3000`).
 
 Con `API_URL` apuntando a la API de Notux (el backend NestJS en `backend/`, ver `backend/README.md`):
 
-- **Ajustes → Cuenta**: «Continuar con Google»; con sesión iniciada muestra foto (o inicial), nombre, correo y «Cerrar sesión». El botón de cuenta del menú lateral abre Ajustes (también con el menú contraído).
+- **Pantalla de inicio de sesión**: «Continuar con Google» o usuario y contraseña (cuentas creadas en el servidor, sin Google Drive). Aparece sola al abrir la app sin sesión hasta que eliges «Continuar sin cuenta»; después se abre desde el botón de cuenta o desde Ajustes.
+- **Ajustes → Cuenta**: con sesión iniciada muestra foto (o inicial), nombre, correo y «Cerrar sesión». El botón de cuenta del menú lateral abre Ajustes (también con el menú contraído).
 - **Ajustes → Respaldo → Google Drive** (solo con sesión): «Guardar en Google Drive» sube el mismo JSON del respaldo descargable a la carpeta «Notux» de tu Drive (se conservan los 10 más recientes); la lista muestra fecha y tamaño, con «Restaurar» (pasa por la misma confirmación que un archivo) y «Eliminar». Si Google retiró el permiso, ofrece «Volver a conectar con Google».
 - **Sin conexión** se ve la última cuenta guardada y se puede cerrar sesión (se borra la sesión local; el servidor se avisa si hay red). Lo que necesita red queda deshabilitado.
 
 Cómo funciona: la API redirige a Google y vuelve a la app con `?login_code=…` (o `?auth_error=…`); la app lo canjea en `POST /auth/exchange` por un token de acceso (15 min, en memoria y `sessionStorage`) y uno de renovación (30 días, en `localStorage` junto con los datos del usuario), y limpia la URL. Ante un 401 la app renueva el token una sola vez (`POST /auth/refresh`, rotativo; entre pestañas se coordina con Web Locks) y repite la petición. Los detalles de la API (rutas, errores, configuración de Google) están en `backend/README.md`.
+
+### Datos de ejemplo
+
+`npm run demo-data` escribe `dev/notux-demo.json`: 6 materias con su horario, 20 tareas (vencidas, de hoy, de la semana, sin fecha y hechas) y 8 notas, con fechas relativas a hoy. Se carga en Ajustes → Respaldo → Restaurar, y **reemplaza** lo que haya en ese navegador.
 
 ### Probar con la API simulada
 
@@ -108,7 +113,7 @@ npm run mock-api   # http://localhost:3100, acepta peticiones de http://localhos
 npm start          # en otra terminal
 ```
 
-y en `js/config.js` pon `export const API_URL = 'http://localhost:3100';` (no lo subas así al repositorio). El «Google» de la simulación es falso: vuelve de inmediato con una usuaria de prueba, y los respaldos viven en memoria hasta que se detiene.
+y en `js/config.js` pon `export const API_URL = 'http://localhost:3100';` (no lo subas así al repositorio). El «Google» de la simulación es falso: vuelve de inmediato con una usuaria de prueba, y los respaldos viven en memoria hasta que se detiene. Con usuario y contraseña acepta `demo` / `demo1234`.
 
 Para probar casos difíciles, con variables de entorno al arrancar o mientras corre desde el navegador:
 

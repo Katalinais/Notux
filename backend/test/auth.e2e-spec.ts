@@ -1,3 +1,4 @@
+import { hashPassword } from '../src/auth/password';
 import { createTestApp, login, type TestContext } from './app';
 
 describe('auth flow with Google mocked (e2e)', () => {
@@ -54,6 +55,7 @@ describe('auth flow with Google mocked (e2e)', () => {
       email: 'estudiante@example.com',
       name: 'Ana Estudiante',
       picture: 'https://example.com/ana.png',
+      provider: 'google',
       driveConnected: true,
     });
 
@@ -101,5 +103,48 @@ describe('auth flow with Google mocked (e2e)', () => {
     await ctx.http().post('/auth/exchange').send({ code }).expect(200);
     const again = await ctx.http().post('/auth/exchange').send({ code }).expect(401);
     expect(again.body).toMatchObject({ code: 'INVALID_LOGIN_CODE' });
+  });
+
+  it('username/password login: right password signs in, anything else is the same 401', async () => {
+    await ctx.prisma.user.create({
+      data: {
+        username: 'luis',
+        passwordHash: await hashPassword('clave-de-prueba'),
+        email: 'luis@notux.demo',
+        name: 'Luis',
+      },
+    });
+
+    const res = await ctx
+      .http()
+      .post('/auth/login')
+      .send({ username: '  Luis ', password: 'clave-de-prueba' })
+      .expect(200);
+    expect(res.body.user).toEqual({
+      id: expect.any(String),
+      email: 'luis@notux.demo',
+      name: 'Luis',
+      picture: null,
+      provider: 'password',
+      driveConnected: false,
+    });
+    await ctx.http().get('/users/me').set('Authorization', `Bearer ${res.body.accessToken}`).expect(200);
+    await ctx.http().post('/auth/refresh').send({ refreshToken: res.body.refreshToken }).expect(200);
+
+    for (const body of [
+      { username: 'luis', password: 'otra-clave' },
+      { username: 'nadie', password: 'clave-de-prueba' },
+    ]) {
+      const fail = await ctx.http().post('/auth/login').send(body).expect(401);
+      expect(fail.body).toMatchObject({ statusCode: 401, code: 'INVALID_CREDENTIALS' });
+    }
+    await ctx.http().post('/auth/login').send({ username: 'luis' }).expect(400);
+  });
+
+  it('a Google-only account cannot be used with a password', async () => {
+    const session = await login(ctx);
+    const user = await ctx.prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
+    expect(user.passwordHash).toBeNull();
+    await ctx.http().post('/auth/login').send({ username: user.email, password: 'x' }).expect(401);
   });
 });

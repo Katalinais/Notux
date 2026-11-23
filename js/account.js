@@ -3,9 +3,8 @@
 import { $, h, icon } from './dom.js';
 import { showToast } from './toast.js';
 import { LOCALE } from './dates.js';
-import { isConfigured, getUser, onAuthChange, initAuth, signInWithGoogle, signOut, profileOf } from './auth.js';
-
-let signingIn = false; // between pressing the button and leaving for Google
+import { isConfigured, getUser, onAuthChange, initAuth, signOut, profileOf } from './auth.js';
+import { initLogin, openLogin, maybeOpenOnStartup } from './login.js';
 
 function initialOf(name) {
   return [...name.trim()][0]?.toLocaleUpperCase(LOCALE) ?? '?';
@@ -59,21 +58,20 @@ function signedOutView() {
     'p',
     { id: 'account-hint', class: online ? 'muted small' : 'notice-warn small' },
     online
-      ? 'Inicia sesión con Google para guardar respaldos en tu Google Drive. Es opcional: sin cuenta todo sigue funcionando.'
+      ? 'Inicia sesión con Google (para guardar respaldos en tu Google Drive) o con tu usuario y contraseña. Es opcional: sin cuenta todo sigue funcionando.'
       : 'Sin conexión: necesitas internet para iniciar sesión. Sin cuenta todo sigue funcionando.',
   );
   const btn = h(
     'button',
     {
       type: 'button',
-      class: 'btn btn-google',
-      disabled: !online || signingIn,
-      'aria-busy': signingIn ? 'true' : null,
+      class: 'btn btn-primary btn-sm',
+      disabled: !online,
       'aria-describedby': 'account-hint',
-      onclick: startSignIn,
+      onclick: () => openLogin(),
     },
-    icon('google', 18),
-    signingIn ? 'Abriendo Google…' : 'Continuar con Google',
+    icon('user', 16),
+    'Iniciar sesión',
   );
   return [hint, btn];
 }
@@ -94,9 +92,11 @@ function signedInView(profile) {
     h(
       'p',
       { class: 'muted small' },
-      navigator.onLine
-        ? 'Puedes guardar respaldos en tu Google Drive (abajo, en Respaldo). Tus datos siguen guardados en este navegador.'
-        : 'Sin conexión: tu sesión sigue guardada en este dispositivo.',
+      !navigator.onLine
+        ? 'Sin conexión: tu sesión sigue guardada en este dispositivo.'
+        : profile.provider === 'password'
+          ? 'Tus datos siguen guardados en este navegador. Los respaldos en Google Drive necesitan una cuenta de Google.'
+          : 'Puedes guardar respaldos en tu Google Drive (abajo, en Respaldo). Tus datos siguen guardados en este navegador.',
     ),
     h(
       'button',
@@ -120,20 +120,6 @@ function render() {
 }
 
 /* ---------- Actions ---------- */
-function startSignIn() {
-  if (signingIn) return;
-  signingIn = true;
-  render();
-  try {
-    signInWithGoogle(); // the page navigates away to Google
-  } catch (err) {
-    console.error('Could not start Google sign-in:', err?.code ?? err?.name ?? 'Error');
-    showToast('No se pudo abrir el inicio de sesión con Google. Inténtalo de nuevo.', { type: 'error' });
-    signingIn = false;
-    render();
-  }
-}
-
 async function endSession() {
   await signOut();
   showToast('Sesión cerrada.');
@@ -159,10 +145,11 @@ function reportRedirect({ redirected, user, error }) {
 
 /**
  * Wires the account UI. Call once on startup.
- * @param {{ openSettings: () => void }} options  the sidebar button opens Ajustes
+ * @param {{ openSettings: () => void }} options  signed in, the sidebar button opens Ajustes
  */
 export function initAccount({ openSettings }) {
-  $('btn-account').addEventListener('click', openSettings);
+  initLogin();
+  $('btn-account').addEventListener('click', () => (getUser() ? openSettings() : openLogin()));
   onAuthChange((_user, event) => {
     render();
     if (event === 'SESSION_EXPIRED') {
@@ -171,15 +158,12 @@ export function initAccount({ openSettings }) {
   });
   window.addEventListener('online', render);
   window.addEventListener('offline', render);
-  // A tab restored from the back/forward cache after leaving for Google.
-  window.addEventListener('pageshow', (e) => {
-    if (e.persisted && signingIn) {
-      signingIn = false;
-      render();
-    }
-  });
   render();
   initAuth()
-    .then(reportRedirect)
+    .then((result) => {
+      reportRedirect(result);
+      // A failed Google sign-in goes back to the screen, so another way can be tried.
+      if (!getUser() && isConfigured()) result.error ? openLogin() : maybeOpenOnStartup();
+    })
     .catch((err) => console.error('Account startup failed:', err?.name ?? 'Error'));
 }

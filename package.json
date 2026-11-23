@@ -7,6 +7,7 @@
   "scripts": {
     "start": "http-server . -p 8080 -c-1 -o",
     "mock-api": "node dev/mock-api.mjs",
+    "demo-data": "node dev/demo-data.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

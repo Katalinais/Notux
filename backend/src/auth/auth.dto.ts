@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { PASSWORD_MAX_LENGTH } from './password';
 import { UserDto } from '../users/user.dto';
 
 export class ExchangeDto {
@@ -8,6 +9,20 @@ export class ExchangeDto {
   @IsNotEmpty()
   @MaxLength(200)
   code!: string;
+}
+
+export class LoginDto {
+  @ApiProperty({ example: 'ana', description: 'Case-insensitive.' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  username!: string;
+
+  @ApiProperty({ example: '••••••••' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PASSWORD_MAX_LENGTH)
+  password!: string;
 }
 
 export class RefreshTokenDto {

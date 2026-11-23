@@ -84,6 +84,17 @@ function formatDate(iso) {
 }
 
 /* ---------- Rendering ---------- */
+// Username/password accounts have no Google behind them, so no Drive.
+function passwordAccountView() {
+  return [
+    h(
+      'p',
+      { class: 'muted small' },
+      'Iniciaste sesión con usuario y contraseña. Para guardar respaldos en Google Drive, cierra sesión y entra con Google. Mientras tanto puedes descargar el respaldo como archivo.',
+    ),
+  ];
+}
+
 function reconnectView() {
   return [
     h(
@@ -190,7 +201,9 @@ function render() {
   const focusedText = hadFocus ? document.activeElement.textContent : null;
   const title = h('h4', { class: 'drive-title' }, icon('cloud', 16), 'Google Drive');
 
-  if (user.driveConnected === false) {
+  if (user.provider === 'password') {
+    section.replaceChildren(title, ...passwordAccountView());
+  } else if (user.driveConnected === false) {
     section.replaceChildren(title, ...reconnectView());
   } else {
     const online = navigator.onLine;
@@ -227,7 +240,7 @@ function render() {
 /* ---------- Actions ---------- */
 async function loadList() {
   const user = getUser();
-  if (!user || user.driveConnected === false || !navigator.onLine) {
+  if (!user || user.provider === 'password' || user.driveConnected === false || !navigator.onLine) {
     render();
     return;
   }
