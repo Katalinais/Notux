@@ -150,7 +150,7 @@ a { color: inherit; }
 .nav a[aria-current="page"] { background: var(--nav-active-bg); color: var(--nav-active-ink); }
 .nav a[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 
-/* Install, settings and collapse buttons at the foot of the sidebar */
+/* Account, install, settings and collapse buttons at the foot of the sidebar */
 .sidebar-footer { display: flex; flex-direction: column; gap: 0.25rem; border-top: 1px solid var(--line); padding-top: 0.75rem; }
 .side-btn {
   display: flex;
@@ -168,6 +168,7 @@ a { color: inherit; }
 }
 .side-btn:hover { background: var(--surface-3); color: var(--ink); }
 .side-btn-install { color: var(--brand-ink); }
+.side-btn-account .nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sidebar-toggle .icon { transition: transform 0.2s; }
 
 /* Collapsed: an icon rail. Labels stay in the DOM for screen readers. */
@@ -339,6 +340,45 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 #reminders-status.is-ok { color: var(--ok-ink); }
 #reminders-status.is-warn { border-radius: 0.5rem; background: var(--warn-bg); padding: 0.5rem 0.75rem; color: var(--warn-ink); }
 #reminders-test { align-self: flex-start; }
+
+/* Cuenta: avatar (photo or initial), Google button */
+.account-avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  font-weight: 600;
+  line-height: 1;
+}
+.account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.account-avatar-sm { width: 20px; height: 20px; font-size: 0.6875rem; }
+.account-avatar-sm:has(.account-initial), .account-avatar-lg { background: var(--nav-active-bg); color: var(--nav-active-ink); }
+.account-avatar-lg { width: 2.75rem; height: 2.75rem; font-size: 1.125rem; }
+.account-body { display: flex; flex-direction: column; gap: 0.5rem; }
+.account-user { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.account-user-text { display: flex; min-width: 0; flex-direction: column; }
+.account-user-text strong, .account-user-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-user-text strong { font-size: 0.875rem; font-weight: 600; }
+.btn-google { align-self: flex-start; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.btn-google:hover { background: var(--surface-3); }
+.btn-google:disabled { cursor: not-allowed; }
+.btn-google[aria-busy="true"] { cursor: progress; }
+.account-body > .btn-sm { align-self: flex-start; }
+
+/* Respaldo → Google Drive */
+.drive-backups { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; border-top: 1px dashed var(--line); padding-top: 0.75rem; }
+.drive-title { display: flex; align-items: center; gap: 0.375rem; margin: 0; font-size: 0.8125rem; font-weight: 600; }
+.drive-list { display: flex; flex-direction: column; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+.drive-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.5rem; border-radius: 0.5rem; background: var(--surface-3); padding: 0.375rem 0.5rem 0.375rem 0.75rem; }
+.drive-item[aria-busy="true"] { cursor: progress; opacity: 0.7; }
+.drive-item-text { display: flex; min-width: 0; flex: 1 1 10rem; flex-direction: column; }
+.drive-item-text strong { font-size: 0.8125rem; font-weight: 600; }
+.drive-item-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drive-item-actions { display: flex; gap: 0.25rem; }
+.drive-error { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+.drive-backups button[aria-busy="true"] { cursor: progress; }
 
 .switch { display: inline-flex; align-items: center; gap: 0.625rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }

@@ -1,0 +1,60 @@
+// Notux backend data model.
+// Run `npm run prisma:migrate` after changing this file.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String   @id @default(cuid())
+  googleSub             String   @unique
+  email                 String
+  name                  String?
+  picture               String?
+  /// Google refresh token encrypted with AES-256-GCM (TOKEN_ENCRYPTION_KEY). Null = Drive not connected.
+  googleRefreshTokenEnc String?
+  /// Space-separated scopes Google granted with that refresh token.
+  googleScopes          String   @default("")
+  /// Cached id of the visible "Notux" folder in the user's Drive.
+  driveFolderId         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  loginCodes    LoginCode[]
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  /// SHA-256 of the opaque token; the token itself is never stored.
+  hash         String    @unique
+  /// All tokens rotated from the same login share a family; reuse of a revoked one revokes the family.
+  familyId     String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  @@index([familyId])
+  @@index([userId])
+}
+
+model LoginCode {
+  id        String    @id @default(cuid())
+  /// SHA-256 of the one-time code handed to the frontend after the Google callback.
+  hash      String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}

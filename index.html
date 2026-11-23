@@ -57,6 +57,10 @@
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Zm4 11a2 2 0 0 0 4 0"/></symbol>
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2V5Zm0 15a2 2 0 0 0 2 2h13v-4M8 7h7"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm-5-3a5 5 0 0 0 10 0M12 19v3"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l-5-5 5-5M5 12h11"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 19a5 5 0 0 1-.9-9.92A6 6 0 0 1 17.7 8.6 4.5 4.5 0 0 1 17.5 19H7Z"/></symbol>
+    <symbol id="i-google" viewBox="0 0 48 48"><path stroke="none" fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path stroke="none" fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path stroke="none" fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path stroke="none" fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></symbol>
   </svg>
 
   <div class="app">
@@ -73,6 +77,11 @@
         <a href="#/notas" data-route="notas"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-note"/></svg> <span class="nav-label">Notas</span></a>
       </nav>
       <div class="sidebar-footer">
+        <!-- Filled in by js/account.js: avatar + name when signed in. Hidden when API_URL is empty. -->
+        <button type="button" id="btn-account" class="side-btn side-btn-account" hidden>
+          <span class="account-avatar account-avatar-sm" aria-hidden="true"><svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-user"/></svg></span>
+          <span class="nav-label">Iniciar sesión</span>
+        </button>
         <button type="button" id="btn-install" class="side-btn side-btn-install" hidden>
           <svg class="icon" width="20" height="20" aria-hidden="true"><use href="#i-download"/></svg>
           <span class="nav-label">Instalar app</span>
@@ -591,6 +600,11 @@
         </button>
       </div>
 
+      <section id="account-section" class="settings-section" aria-labelledby="account-title">
+        <h3 id="account-title">Cuenta</h3>
+        <div id="account-body" class="account-body"></div>
+      </section>
+
       <section id="install-section" class="settings-section" aria-labelledby="install-title" hidden>
         <h3 id="install-title">Instalar Notux</h3>
         <p class="muted small">Ábrela como una app, con su propio ícono y sin la barra del navegador. También hace falta para que el recordatorio diario llegue con la app cerrada.</p>
@@ -623,6 +637,8 @@
           </button>
           <input type="file" id="backup-file" accept="application/json,.json" hidden>
         </div>
+        <!-- Filled in by js/drive-backups.js when signed in. -->
+        <div id="drive-backups" class="drive-backups" hidden></div>
       </section>
 
       <section class="settings-section" aria-labelledby="reminders-title">

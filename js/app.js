@@ -54,6 +54,8 @@ import {
   InvalidBackupError,
 } from './backup.js';
 import * as reminders from './reminders.js';
+import { initAccount } from './account.js';
+import { initDriveBackups, refreshDriveBackups } from './drive-backups.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
@@ -1754,13 +1756,17 @@ async function downloadBackup() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  markBackupSaved();
+  return counts;
+}
+
+function markBackupSaved() {
   try {
     localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
   } catch {
     // ignore
   }
   renderBackupInfo();
-  return counts;
 }
 
 async function renderReminders() {
@@ -1779,11 +1785,13 @@ function openSettings() {
   renderBackupInfo();
   renderReminders();
   updateLockState();
+  refreshDriveBackups();
   $('settings-dialog').showModal();
 }
 $('btn-settings').addEventListener('click', openSettings); // sidebar
 $('btn-settings-mobile').addEventListener('click', openSettings); // top bar on phones
 $('settings-close').addEventListener('click', () => $('settings-dialog').close());
+initAccount({ openSettings }); // optional account: Ajustes → Cuenta and the sidebar button
 
 $('backup-export').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
@@ -1814,11 +1822,18 @@ $('backup-file').addEventListener('change', async (e) => {
     showToast(err instanceof InvalidBackupError ? err.message : 'No se pudo leer el archivo.', { type: 'error' });
     return;
   }
-  const { counts, exportedAt } = pendingRestore;
+  openRestoreDialog(pendingRestore);
+});
+
+// Asks before replacing everything with a parsed backup (from a file or from Google Drive).
+function openRestoreDialog(parsed, { source = 'file' } = {}) {
+  pendingRestore = parsed;
+  const { counts, exportedAt } = parsed;
   const when = exportedAt
     ? new Date(exportedAt).toLocaleString(LOCALE, { dateStyle: 'long', timeStyle: 'short' })
     : 'fecha desconocida';
-  $('restore-backup').textContent = `${describeCounts(counts)} · descargado el ${when}`;
+  const origin = source === 'drive' ? 'de Google Drive, hecho el' : 'descargado el';
+  $('restore-backup').textContent = `${describeCounts(counts)} · ${origin} ${when}`;
   $('restore-current').textContent = describeCounts({
     tasks: tasks.length,
     notes: notes.length,
@@ -1827,7 +1842,9 @@ $('backup-file').addEventListener('change', async (e) => {
   });
   $('restore-error').hidden = true;
   $('restore-dialog').showModal();
-});
+}
+
+initDriveBackups({ getDb: () => db, confirmRestore: openRestoreDialog, onBackupSaved: markBackupSaved });
 
 $('restore-save-current').addEventListener('click', async () => {
   try {

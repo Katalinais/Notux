@@ -1,0 +1,64 @@
+import { type INestApplication, ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json } from 'express';
+import helmet from 'helmet';
+import { APP_CONFIG, type AppConfig } from './config/env';
+
+export const BACKUP_BODY_LIMIT = '25mb';
+export const DEFAULT_BODY_LIMIT = '100kb';
+
+/**
+ * Everything main.ts and the e2e tests share. The app must be created with `{ bodyParser: false }`
+ * so the per-route JSON limits below are the only body parsers.
+ */
+export function configureApp(app: NestExpressApplication): INestApplication {
+  const config = app.get<AppConfig>(APP_CONFIG);
+
+  app.set('trust proxy', config.trustProxy);
+  app.disable('x-powered-by');
+  app.use(
+    helmet({
+      // Over plain http (local dev) these would break the Swagger UI and pin localhost to https.
+      contentSecurityPolicy: { directives: { upgradeInsecureRequests: config.isProduction ? [] : null } },
+      strictTransportSecurity: config.isProduction,
+    }),
+  );
+  app.enableCors({
+    origin: config.frontendOrigins,
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    credentials: false,
+    maxAge: 600,
+  });
+
+  // Backups can be big (photos/audio as base64): 25 MB there, small bodies everywhere else.
+  // The raw bytes are kept so the backup is stored in Drive exactly as sent.
+  app.use(
+    '/drive/backups',
+    json({
+      limit: BACKUP_BODY_LIMIT,
+      verify: (req, _res, buf) => {
+        (req as typeof req & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
+  app.use(json({ limit: DEFAULT_BODY_LIMIT }));
+
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+  app.enableShutdownHooks();
+
+  if (config.swaggerEnabled) {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('Notux API')
+        .setDescription('Google login and Google Drive backups for the Notux PWA.')
+        .setVersion('1')
+        .addBearerAuth()
+        .build(),
+    );
+    SwaggerModule.setup('docs', app, document);
+  }
+  return app;
+}

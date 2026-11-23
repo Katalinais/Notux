@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v15';
+const CACHE_NAME = 'notux-v16';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -18,6 +18,11 @@ const CORE_ASSETS = [
   './js/note-board.js',
   './js/backup.js',
   './js/reminders.js',
+  './js/config.js',
+  './js/api.js',
+  './js/auth.js',
+  './js/account.js',
+  './js/drive-backups.js',
   './icons/favicon-64.png',
   './icons/logo.png',
   './icons/logo-mark.png',
@@ -33,6 +38,8 @@ const SCOPE = new URL(self.registration.scope);
 const ICONS_PATH = new URL('icons/', SCOPE).pathname;
 const API_PATH = new URL('api/', SCOPE).pathname;
 const APP_SHELL = new URL('index.html', SCOPE).href;
+// Query parameters of a sign-in redirect (see js/auth.js): one-time code or error.
+const SIGN_IN_RETURN = ['login_code', 'auth_error'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -77,18 +84,6 @@ async function cacheFirst(event) {
   return response;
 }
 
-async function networkFirst(event) {
-  try {
-    const response = await fetch(event.request);
-    event.waitUntil(putInCache(event.request, response.clone()));
-    return response;
-  } catch (err) {
-    const cached = await caches.match(event.request);
-    if (cached) return cached;
-    throw err;
-  }
-}
-
 async function staleWhileRevalidate(event) {
   const cached = await caches.match(event.request);
   const update = fetch(event.request).then((response) => {
@@ -124,15 +119,21 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // Leave anything we can't or shouldn't cache to the browser: non-GET requests
-  // (Cache API rejects them) and other origins (extensions, CDNs, etc.).
+  // (Cache API rejects them), other origins (the Notux API, Google, extensions,
+  // CDNs…), the API when it's served under this origin's api/, and anything
+  // carrying an access token. Those always go straight to the network.
   if (request.method !== 'GET' || url.origin !== SCOPE.origin) return;
+  if (url.pathname.startsWith(API_PATH) || request.headers.has('Authorization')) return;
 
-  if (request.mode === 'navigate') {
+  if (request.mode === 'navigate' && SIGN_IN_RETURN.some((p) => url.searchParams.has(p))) {
+    // Coming back from sign-in: the URL carries a one-time code. Never keep a
+    // cache entry for it; serve the page (or the cached shell when offline, so
+    // the app can say it couldn't finish signing in).
+    event.respondWith(fetch(request).catch(() => caches.match(APP_SHELL)));
+  } else if (request.mode === 'navigate') {
     event.respondWith(handleNavigation(event));
   } else if (url.pathname.startsWith(ICONS_PATH)) {
     event.respondWith(cacheFirst(event));
-  } else if (url.pathname.startsWith(API_PATH)) {
-    event.respondWith(networkFirst(event));
   } else {
     event.respondWith(staleWhileRevalidate(event));
   }

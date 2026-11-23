@@ -2,7 +2,8 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/', '.claude/'] }, // .claude/worktrees holds other branches' checkouts
+  // .claude/worktrees holds other branches' checkouts; backend/ has its own tooling.
+  { ignores: ['node_modules/', '.claude/', 'backend/'] },
   js.configs.recommended,
   {
     files: ['js/**/*.js'],
@@ -13,7 +14,7 @@ export default [
     languageOptions: { sourceType: 'script', globals: globals.serviceworker },
   },
   {
-    files: ['eslint.config.js'],
+    files: ['eslint.config.js', 'dev/**/*.mjs'],
     languageOptions: { sourceType: 'module', globals: globals.node },
   },
   {

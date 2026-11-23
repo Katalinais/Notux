@@ -1,6 +1,6 @@
 # Notux
 
-PWA para organizar materias, tareas, notas, un calendario y el horario semanal de clases. Funciona sin conexión y guarda todo en el navegador: no hay servidor ni cuentas.
+PWA para organizar materias, tareas, notas, un calendario y el horario semanal de clases. Funciona sin conexión y guarda todo en el navegador. La cuenta con Google es opcional y sirve para guardar respaldos en Google Drive.
 
 ## Funcionalidades
 
@@ -12,6 +12,7 @@ PWA para organizar materias, tareas, notas, un calendario y el horario semanal d
 - **Notas privadas**: cada tarea puede llevar una nota cifrada con AES-GCM (256 bits). La clave se deriva de una contraseña con PBKDF2-SHA256 y solo vive en memoria mientras las notas están desbloqueadas. Se bloquean solas tras 5 minutos sin actividad o 1 minuto con la app en segundo plano. Al cambiar la contraseña, todas las notas se vuelven a cifrar en una sola transacción.
 - **Notas libres**: un lienzo donde cada nota se queda donde la sueltes (arrastrándola, o con su asa y las flechas del teclado); «Ordenar» las vuelve a acomodar en columnas. Filtro por materia; el formulario se despliega con «Nueva nota». Editables, con foto (cámara o galería, comprimida a JPEG) y audio grabado con el micrófono. No se cifran.
 - **Modo oscuro**: claro, oscuro o igual que el sistema (en Ajustes → Apariencia, o con el botón del menú lateral). La elección se guarda en el navegador y se aplica antes de pintar la página, sin destellos.
+- **Cuenta y Google Drive** (opcional): iniciar sesión con Google y guardar, listar, restaurar y eliminar respaldos en tu Google Drive. Ver [Cuenta y Google Drive](#cuenta-y-google-drive).
 - **Respaldo**: en Ajustes se descarga un JSON con todos los datos (incluidas fotos, audios y notas privadas cifradas) y se puede restaurar aquí o en otro dispositivo. Restaurar reemplaza todo en una sola transacción.
 - **Recordatorio diario**: notificación por la mañana con lo que vence hoy, lo vencido y las clases del día (ver limitaciones abajo).
 - **Offline e instalable**: service worker con caché del app shell y manifest para instalarla en el celular o el escritorio. Cuando hay una versión nueva, la app avisa y se actualiza al pulsar «Actualizar».
@@ -26,6 +27,7 @@ npm start          # http://localhost:8080 sin caché HTTP
 npm run lint       # ESLint
 npm run format     # Prettier (JS y JSON)
 npm run check      # lint + formato, para antes de hacer commit
+npm run mock-api   # API simulada en memoria (ver «Cuenta y Google Drive»)
 ```
 
 La cámara, el micrófono, el service worker y `crypto.subtle` solo funcionan en un contexto seguro: `localhost` o HTTPS.
@@ -45,6 +47,11 @@ js/toast.js      Avisos no bloqueantes (reemplazan a alert())
 js/calendar.js   Vista de calendario
 js/note-board.js Lienzo de notas: posiciones, arrastre y teclado
 js/backup.js     Respaldo: exportar/importar JSON (binarios en base64 con su tipo)
+js/config.js     API_URL: dirección de la API de Notux (vacía = sin cuentas)
+js/api.js        Cliente de la API: JSON, token Bearer, renovación automática, tiempos de espera
+js/auth.js       Sesión: iniciar con Google, canjear el código, renovar tokens, cerrar sesión
+js/account.js    Ajustes → Cuenta y botón de cuenta del menú lateral
+js/drive-backups.js Respaldos en Google Drive (Ajustes → Respaldo)
 js/reminders.js  Ajustes del recordatorio diario (Periodic Background Sync)
 js/schedule.js   Materias y horario: lógica (cruces, columnas, ahora/siguiente), diálogo y vistas
 js/subjects.js   Reglas de las materias: colores, nombres, conversión de clases antiguas
@@ -52,6 +59,7 @@ js/dates.js      Fechas como 'YYYY-MM-DD' locales, cuadrícula del mes, formatos
 js/dom.js        Ayudantes para crear elementos e íconos
 js/device.js     Cámara, galería y grabación de audio
 sw.js            Service worker y estrategias de caché
+dev/mock-api.mjs API simulada para desarrollo (Node, sin dependencias)
 manifest.json    Manifest de la PWA
 ```
 
@@ -73,12 +81,45 @@ La migración a la versión 6 convierte cada clase antigua (que tenía su propio
 
 ## Estrategias de caché
 
-| Recurso                   | Estrategia                                    |
-| ------------------------- | --------------------------------------------- |
-| Navegación                | Stale-while-revalidate; sin red, `index.html` |
-| `icons/`                  | Cache first                                   |
-| `api/`                    | Network first                                 |
-| Resto (JS, CSS, manifest) | Stale-while-revalidate                        |
+| Recurso                                                     | Estrategia                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| Navegación                                                  | Stale-while-revalidate; sin red, `index.html`          |
+| `icons/`                                                    | Cache first                                            |
+| API (`API_URL`, `api/`)                                     | Solo red: nunca se interceptan ni se guardan           |
+| Regreso del inicio de sesión (`?login_code`, `?auth_error`) | Solo red (sin red, `index.html`), sin guardar en caché |
+| Resto (JS, CSS, manifest)                                   | Stale-while-revalidate                                 |
+
+## Cuenta y Google Drive
+
+Opcional. Con `API_URL` vacía en `js/config.js` (así viene) la app funciona exactamente igual que siempre, sin cuentas y sin contactar ningún servidor; Ajustes → Cuenta solo lo indica.
+
+Con `API_URL` apuntando a la API de Notux (el backend NestJS en `backend/`, ver `backend/README.md`):
+
+- **Ajustes → Cuenta**: «Continuar con Google»; con sesión iniciada muestra foto (o inicial), nombre, correo y «Cerrar sesión». El botón de cuenta del menú lateral abre Ajustes (también con el menú contraído).
+- **Ajustes → Respaldo → Google Drive** (solo con sesión): «Guardar en Google Drive» sube el mismo JSON del respaldo descargable a la carpeta «Notux» de tu Drive (se conservan los 10 más recientes); la lista muestra fecha y tamaño, con «Restaurar» (pasa por la misma confirmación que un archivo) y «Eliminar». Si Google retiró el permiso, ofrece «Volver a conectar con Google».
+- **Sin conexión** se ve la última cuenta guardada y se puede cerrar sesión (se borra la sesión local; el servidor se avisa si hay red). Lo que necesita red queda deshabilitado.
+
+Cómo funciona: la API redirige a Google y vuelve a la app con `?login_code=…` (o `?auth_error=…`); la app lo canjea en `POST /auth/exchange` por un token de acceso (15 min, en memoria y `sessionStorage`) y uno de renovación (30 días, en `localStorage` junto con los datos del usuario), y limpia la URL. Ante un 401 la app renueva el token una sola vez (`POST /auth/refresh`, rotativo; entre pestañas se coordina con Web Locks) y repite la petición. Los detalles de la API (rutas, errores, configuración de Google) están en `backend/README.md`.
+
+### Probar con la API simulada
+
+```sh
+npm run mock-api   # http://localhost:3100, acepta peticiones de http://localhost:8080
+npm start          # en otra terminal
+```
+
+y en `js/config.js` pon `export const API_URL = 'http://localhost:3100';` (no lo subas así al repositorio). El «Google» de la simulación es falso: vuelve de inmediato con una usuaria de prueba, y los respaldos viven en memoria hasta que se detiene.
+
+Para probar casos difíciles, con variables de entorno al arrancar o mientras corre desde el navegador:
+
+| Caso                                       | Al arrancar                              | Mientras corre                                                    |
+| ------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------- |
+| Otro origen del frontend                   | `FRONTEND_ORIGINS=http://localhost:8081` | —                                                                 |
+| Token de acceso que caduca pronto          | `MOCK_ACCESS_TTL=20`                     | `/__mock?access_ttl=20` o `/__mock?expire=1`                      |
+| Drive sin permiso (`DRIVE_NOT_AUTHORIZED`) | `MOCK_DRIVE=unauthorized`                | `/__mock?drive=unauthorized` (volver a iniciar sesión lo arregla) |
+| Drive caído (`DRIVE_UNAVAILABLE`)          | `MOCK_DRIVE=unavailable`                 | `/__mock?drive=unavailable`, `/__mock?drive=ok`                   |
+| Inicio de sesión cancelado                 | `MOCK_AUTH_ERROR=access_denied`          | `/__mock?auth_error=access_denied` (`auth_error=` lo quita)       |
+| Red lenta                                  | `MOCK_DELAY=1500`                        | `/__mock?delay=1500`                                              |
 
 ## Actualizaciones
 

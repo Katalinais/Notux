@@ -1,0 +1,23 @@
+# Postgres for local development and e2e tests.
+#   docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: notux-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notux
+      POSTGRES_PASSWORD: notux
+      POSTGRES_DB: notux
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - notux-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U notux -d notux']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  notux-pgdata:
