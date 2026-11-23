@@ -1,7 +1,7 @@
 import { subjectsFromLegacyBlocks } from './subjects.js';
 
 const DB_NAME = 'notux-db';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 // onBlocked: another tab still has an older version open, so the upgrade waits
 // until it closes. onVersionChange: a newer version (another tab, after an
@@ -129,6 +129,14 @@ export function openDatabase({ onBlocked, onVersionChange } = {}) {
           };
         }
       }
+
+      // v6 -> v7: task titles no longer have to be unique — with subjects, "Taller 1"
+      // of Cálculo and "Taller 1" of Física are different tasks. Nothing looks
+      // tasks up by title, so the index simply goes away.
+      if (oldVersion < 7 && db.objectStoreNames.contains('tasks')) {
+        const store = tx.objectStore('tasks');
+        if (store.indexNames.contains('byTitle')) store.deleteIndex('byTitle');
+      }
     };
 
     request.onblocked = () => onBlocked?.();
@@ -164,15 +172,6 @@ export function updateTask(db, task) {
   });
 }
 
-export function getTask(db, id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('tasks', 'readonly');
-    const request = tx.objectStore('tasks').get(id);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
 export function deleteTask(db, id) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('tasks', 'readwrite');
@@ -201,49 +200,14 @@ export function countTasks(db) {
   });
 }
 
-// Walks only the tasks of one priority with a cursor over the index,
-// instead of fetching the whole store and filtering in memory.
-export function tasksByPriority(db, priority) {
-  return new Promise((resolve, reject) => {
-    const result = [];
-    const store = db.transaction('tasks', 'readonly').objectStore('tasks');
-    const index = store.index('byPriority');
-    const cursorRequest = index.openCursor(IDBKeyRange.only(priority));
-
-    cursorRequest.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (cursor) {
-        result.push(cursor.value);
-        cursor.continue();
-      } else {
-        resolve(result);
-      }
-    };
-    cursorRequest.onerror = () => reject(cursorRequest.error);
-  });
-}
-
-// Write counterpart to tasksByPriority(): walks the same index in a readwrite
-// cursor and marks each matching task done with cursor.update(), in place.
-export function markTasksDoneByPriority(db, priority) {
+// Writes several tasks in one transaction: all of them change, or none do.
+export function putTasks(db, tasks) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('tasks', 'readwrite');
-    const index = tx.objectStore('tasks').index('byPriority');
-    const cursorRequest = index.openCursor(IDBKeyRange.only(priority));
-    let updated = 0;
-
-    cursorRequest.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (!cursor) return;
-      const task = cursor.value;
-      if (!task.done) {
-        cursor.update({ ...task, done: true, completedAt: new Date().toISOString() });
-        updated++;
-      }
-      cursor.continue();
-    };
-    tx.oncomplete = () => resolve(updated);
-    tx.onerror = () => reject(tx.error);
+    const store = tx.objectStore('tasks');
+    for (const task of tasks) store.put(task);
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
   });
 }
 

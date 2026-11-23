@@ -5,7 +5,7 @@ PWA para organizar materias, tareas, notas, un calendario y el horario semanal d
 ## Funcionalidades
 
 - **Inicio**: saludo y alta rápida de tareas; contadores (vencidas, para hoy, próximos 7 días, completadas) que abren Tareas ya filtrada; «Qué sigue» con las pendientes agrupadas (vencidas, hoy, mañana, esta semana, más adelante, sin fecha); las clases de hoy; las materias con su próxima clase y las notas recientes.
-- **Tareas**: título, fecha límite, prioridad, materia y nota privada. El formulario va al lado de la lista en pantallas anchas y se despliega con «Nueva tarea» en el celular. Editar, eliminar con opción de deshacer, búsqueda, filtros por estado, prioridad y materia, y marcar en bloque como hechas.
+- **Tareas**: título, fecha límite, prioridad, materia y nota privada. El formulario va al lado de la lista en pantallas anchas y se despliega con «Nueva tarea» en el celular. Editar, eliminar con opción de deshacer, búsqueda, filtros por estado, prioridad y materia, y marcar como hechas todas las pendientes de la lista filtrada (con «Deshacer»).
 - **Calendario**: vista de mes con las tareas en su fecha límite (títulos en pantallas anchas, puntos de color en el celular), lista del día seleccionado y alta rápida de tareas para ese día. Se navega con las flechas, Inicio/Fin y RePág/AvPág.
 - **Materias**: cada materia (o actividad) tiene nombre, color y los horarios que necesite, cada uno con su día, hora y lugar (p. ej. lunes 7–9 en C-204 y miércoles 14–16 en el laboratorio). Las tareas y las notas se pueden asignar a una materia; cada materia tiene su página con sus horarios, sus tareas (con alta rápida) y sus notas. Eliminar una materia quita sus horarios y deja sus tareas y notas sin materia (con «Deshacer»).
 - **Horario**: cuadrícula semanal en pantallas anchas y agenda por día en el celular; avisa si un horario se cruza con otro. Inicio muestra las clases de hoy con lo que está pasando ahora y lo siguiente.
@@ -57,15 +57,15 @@ manifest.json    Manifest de la PWA
 
 ## Datos
 
-Base IndexedDB `notux-db` (versión 6):
+Base IndexedDB `notux-db` (versión 7):
 
-| Store      | Contenido                                                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `tasks`    | Tareas. Índices `byPriority` y `byTitle` (único). Nota privada cifrada opcional. `subjectId` opcional                         |
-| `notes`    | Notas libres con `photo` y `audio` opcionales (Blob). `subjectId` y `board` (`{ x, y, z }`, su lugar en el lienzo) opcionales |
-| `subjects` | Materias: `name`, `color`                                                                                                     |
-| `schedule` | Horarios de cada materia: `subjectId`, `day` (0 = domingo … 6 = sábado), `start`/`end` (`HH:MM`), `place`. Índice `byDay`     |
-| `config`   | `privateNotes`: sal y texto de verificación de la contraseña                                                                  |
+| Store      | Contenido                                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `tasks`    | Tareas. Índice `byPriority` (los títulos pueden repetirse desde la versión 7). Nota privada cifrada opcional. `subjectId` opcional |
+| `notes`    | Notas libres con `photo` y `audio` opcionales (Blob). `subjectId` y `board` (`{ x, y, z }`, su lugar en el lienzo) opcionales      |
+| `subjects` | Materias: `name`, `color`                                                                                                          |
+| `schedule` | Horarios de cada materia: `subjectId`, `day` (0 = domingo … 6 = sábado), `start`/`end` (`HH:MM`), `place`. Índice `byDay`          |
+| `config`   | `privateNotes`: sal y texto de verificación de la contraseña                                                                       |
 
 La migración a la versión 6 convierte cada clase antigua (que tenía su propio nombre y color) en una materia; las clases con el mismo nombre quedan en una sola. Las migraciones de `openDatabase()` llevan los datos de versiones anteriores (nombres en español, localStorage) al esquema actual sin perderlos. Cualquier cambio de esquema debe subir `DB_VERSION` y agregar su paso de migración.
 

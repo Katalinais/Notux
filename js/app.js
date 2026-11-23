@@ -5,7 +5,7 @@ import {
   deleteTask,
   getAllTasks,
   countTasks,
-  markTasksDoneByPriority,
+  putTasks,
   createNote,
   updateNote,
   putNotes,
@@ -610,12 +610,7 @@ async function restoreTask(task) {
     await createTask(db, task); // same id: it comes back exactly where it was
   } catch (err) {
     console.error('Could not restore the task:', err);
-    showToast(
-      err.name === 'ConstraintError'
-        ? 'No se pudo restaurar: ya existe otra tarea con ese título.'
-        : 'No se pudo restaurar la tarea.',
-      { type: 'error' },
-    );
+    showToast('No se pudo restaurar la tarea.', { type: 'error' });
     return;
   }
   tasks.push(task);
@@ -711,10 +706,8 @@ $('task-edit-form').addEventListener('submit', async (e) => {
   } catch (err) {
     console.error('Could not save the task:', err);
     const error = $('task-edit-error');
-    error.textContent =
-      err.name === 'ConstraintError' ? 'Ya existe otra tarea con ese título.' : 'No se pudo guardar. Intenta de nuevo.';
+    error.textContent = 'No se pudo guardar. Intenta de nuevo.';
     error.hidden = false;
-    if (err.name === 'ConstraintError') titleInput.focus();
     return;
   } finally {
     savingTask = false;
@@ -1139,13 +1132,15 @@ const STATUS_TEST = {
   done: (t) => t.done,
 };
 
-function renderTasksView() {
+// The tasks the Tareas list shows right now, with every filter applied. The
+// bulk "mark as done" acts on exactly this list — never on tasks out of view.
+function visibleTasks() {
   const search = $('tasks-search').value.trim().toLowerCase();
   const status = $('tasks-status').value;
   const priorityFilter = $('tasks-filter').value;
   const subjectFilter = $('tasks-subject').value; // 'all' | 'none' | id
 
-  const filtered = tasks
+  return tasks
     .filter(STATUS_TEST[status] ?? STATUS_TEST.all)
     .filter((t) => priorityFilter === 'all' || t.priority === priorityFilter)
     .filter((t) =>
@@ -1164,7 +1159,11 @@ function renderTasksView() {
             (a.due ?? '9').localeCompare(b.due ?? '9') ||
             a.createdAt.localeCompare(b.createdAt),
     );
+}
 
+function renderTasksView() {
+  const filtered = visibleTasks();
+  updateBulkDoneButton(filtered);
   $('tasks-count').textContent = tasks.length
     ? filtered.length === tasks.length
       ? `${tasks.length} tarea${tasks.length === 1 ? '' : 's'}`
@@ -1685,11 +1684,20 @@ function renderTodayPanel() {
 $('today-due-link').addEventListener('click', () => calendar.select(todayISO()));
 
 // "Ahora / En 20 min", the red now-line and the date roll over by themselves.
+// At midnight everything that groups or labels by day ("Hoy", "Mañana",
+// "Vencidas", the counters, the calendar's today) is redrawn too.
+let renderedDay = todayISO();
 setInterval(() => {
   renderToday();
-  renderTodayPanel();
-  renderHomeSubjects();
   schedule.render();
+  if (todayISO() !== renderedDay) {
+    renderedDay = todayISO();
+    render(); // Inicio, Tareas, Calendario, Hoy panel, subject page
+    renderNotesView(); // relative dates on recent notes
+  } else {
+    renderTodayPanel();
+    renderHomeSubjects();
+  }
 }, 60_000);
 
 const todayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1899,12 +1907,7 @@ $('reminders-test').addEventListener('click', () => reminders.sendTest());
 /* ---------- Startup ---------- */
 function notifyTaskSaveError(err) {
   console.error('Could not save the task:', err);
-  showToast(
-    err.name === 'ConstraintError'
-      ? 'Ya existe una tarea con ese título.'
-      : 'No se pudo guardar la tarea. Intenta de nuevo.',
-    { type: 'error' },
-  );
+  showToast('No se pudo guardar la tarea. Intenta de nuevo.', { type: 'error' });
 }
 
 const calendar = initCalendar({
@@ -1944,8 +1947,11 @@ $('task-form').addEventListener('submit', async (e) => {
   titleInput.focus();
 });
 
-function updateBulkDoneButtonState() {
-  $('tasks-bulk-done').disabled = $('tasks-filter').value === 'all';
+function updateBulkDoneButton(visible = visibleTasks()) {
+  const pending = visible.filter((t) => !t.done).length;
+  const btn = $('tasks-bulk-done');
+  btn.disabled = pending === 0;
+  btn.textContent = pending ? `Marcar ${pending} como hecha${pending === 1 ? '' : 's'}` : 'Marcar como hechas';
 }
 
 $('tasks-search').addEventListener('input', renderTasksView);
@@ -1980,29 +1986,44 @@ $('home-add-form').addEventListener('submit', async (e) => {
   showToast(`Tarea «${title}» agregada.`);
 });
 $('tasks-subject').addEventListener('change', renderTasksView);
-$('tasks-filter').addEventListener('change', () => {
-  renderTasksView();
-  updateBulkDoneButtonState();
-});
+$('tasks-filter').addEventListener('change', renderTasksView);
+
+// Replaces tasks (by id) both in IndexedDB, in one transaction, and in memory.
+async function saveTasks(changed) {
+  await putTasks(db, changed);
+  const byId = new Map(changed.map((t) => [t.id, t]));
+  tasks = tasks.map((t) => byId.get(t.id) ?? t);
+  render();
+}
 
 $('tasks-bulk-done').addEventListener('click', async () => {
-  const priority = $('tasks-filter').value;
-  if (priority === 'all') return;
+  const before = visibleTasks().filter((t) => !t.done);
+  if (!before.length) return;
+  const now = new Date().toISOString();
   try {
-    const updated = await markTasksDoneByPriority(db, priority);
-    if (updated > 0) {
-      tasks = await getAllTasks(db);
-      render();
-    }
-    showToast(
-      updated > 0
-        ? `${updated} tarea${updated === 1 ? '' : 's'} marcada${updated === 1 ? '' : 's'} como hecha${updated === 1 ? '' : 's'}.`
-        : 'No había tareas pendientes con esa prioridad.',
-    );
+    await saveTasks(before.map((t) => ({ ...t, done: true, completedAt: now })));
   } catch (err) {
     console.error('Could not bulk-update tasks:', err);
     showToast('No se pudieron marcar las tareas.', { type: 'error' });
+    return;
   }
+  const n = before.length;
+  showToast(`${n} tarea${n === 1 ? '' : 's'} marcada${n === 1 ? '' : 's'} como hecha${n === 1 ? '' : 's'}.`, {
+    action: {
+      label: 'Deshacer',
+      onClick: async () => {
+        // Only the done state comes back; edits made since are kept.
+        const ids = new Set(before.map((t) => t.id));
+        const undone = tasks.filter((t) => ids.has(t.id)).map((t) => ({ ...t, done: false, completedAt: null }));
+        try {
+          await saveTasks(undone);
+        } catch (err) {
+          console.error('Could not undo the bulk update:', err);
+          showToast('No se pudo deshacer.', { type: 'error' });
+        }
+      },
+    },
+  });
 });
 
 window.addEventListener('online', renderNetwork);
@@ -2029,7 +2050,6 @@ async function init() {
   renderNetwork();
   updateLockState();
   updateNoteFormState();
-  updateBulkDoneButtonState();
   render();
   renderNotesView();
   reminders.refresh(db).catch(() => {});

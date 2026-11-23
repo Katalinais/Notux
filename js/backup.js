@@ -125,8 +125,6 @@ export function parseBackup(text) {
   };
   for (const t of data.tasks)
     if (typeof t.title !== 'string' || !Number.isInteger(t.id)) bad('hay una tarea inválida.');
-  const titles = new Set(data.tasks.map((t) => t.title));
-  if (titles.size !== data.tasks.length) bad('hay tareas con el mismo título.');
   for (const n of data.notes) if (typeof n.title !== 'string' || !Number.isInteger(n.id)) bad('hay una nota inválida.');
   for (const s of data.subjects) {
     if (typeof s.name !== 'string' || !Number.isInteger(s.id)) bad('hay una materia inválida.');
