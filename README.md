@@ -96,6 +96,7 @@ Opcional. Con `API_URL` vacía en `js/config.js` la app funciona exactamente igu
 Con `API_URL` apuntando a la API de Notux (el backend NestJS en `backend/`, ver `backend/README.md`):
 
 - **Pantalla de inicio de sesión**: «Continuar con Google» o usuario y contraseña (cuentas creadas en el servidor, sin Google Drive). Aparece sola al abrir la app sin sesión hasta que eliges «Continuar sin cuenta»; después se abre desde el botón de cuenta o desde Ajustes.
+- **Sincronización**: con sesión iniciada (Google o usuario y contraseña) los datos se guardan también en tu cuenta y se cargan en cualquier navegador donde entres. Siguen viviendo en el navegador, así que todo funciona sin conexión; los cambios se envían unos segundos después de hacerlos y se buscan cambios de otros dispositivos al volver a la app y cada minuto. Si este navegador y otro dispositivo cambiaron a la vez (o al entrar en un navegador que ya tiene otros datos), pregunta cuáles conservar en vez de mezclarlos. Sin cuenta nada sale del navegador.
 - **Ajustes → Cuenta**: con sesión iniciada muestra foto (o inicial), nombre, correo y «Cerrar sesión». El botón de cuenta del menú lateral abre Ajustes (también con el menú contraído).
 - **Ajustes → Respaldo → Google Drive** (solo con sesión): «Guardar en Google Drive» sube el mismo JSON del respaldo descargable a la carpeta «Notux» de tu Drive (se conservan los 10 más recientes); la lista muestra fecha y tamaño, con «Restaurar» (pasa por la misma confirmación que un archivo) y «Eliminar». Si Google retiró el permiso, ofrece «Volver a conectar con Google».
 - **Sin conexión** se ve la última cuenta guardada y se puede cerrar sesión (se borra la sesión local; el servidor se avisa si hay red). Lo que necesita red queda deshabilitado.
@@ -104,7 +105,7 @@ Cómo funciona: la API redirige a Google y vuelve a la app con `?login_code=…`
 
 ### Datos de ejemplo
 
-`npm run demo-data` escribe `dev/notux-demo.json`: 6 materias con su horario, 20 tareas (vencidas, de hoy, de la semana, sin fecha y hechas) y 8 notas, con fechas relativas a hoy. Se carga en Ajustes → Respaldo → Restaurar, y **reemplaza** lo que haya en ese navegador.
+`npm run demo-data` escribe `dev/notux-demo.json`: 6 materias con su horario, 20 tareas (vencidas, de hoy, de la semana, sin fecha y hechas; 3 con nota privada, contraseña `notux1234`) y 10 notas (una con foto y otra con audio), con fechas relativas a hoy. Se carga en Ajustes → Respaldo → Restaurar, y **reemplaza** lo que haya en ese navegador.
 
 ### Probar con la API simulada
 

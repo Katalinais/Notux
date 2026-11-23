@@ -3,6 +3,52 @@ import { subjectsFromLegacyBlocks } from './subjects.js';
 const DB_NAME = 'notux-db';
 const DB_VERSION = 7;
 
+/* ---------- Change notifications ---------- */
+// Every committed readwrite transaction on the data stores notifies listeners
+// (sync.js uses it to know there is something to upload). Wrapping
+// db.transaction() catches every write in this file without touching each one.
+const changeListeners = new Set();
+let muted = 0;
+
+/** @param {(stores: string[]) => void} callback  @returns {() => void} unsubscribe */
+export function onDataChange(callback) {
+  changeListeners.add(callback);
+  return () => changeListeners.delete(callback);
+}
+
+/** Runs fn() without change notifications (for writing data that came from the sync itself). */
+export async function withoutChangeNotifications(fn) {
+  muted++;
+  try {
+    return await fn();
+  } finally {
+    muted--;
+  }
+}
+
+function watchWrites(db) {
+  const transaction = db.transaction.bind(db);
+  db.transaction = (storeNames, mode, options) => {
+    const tx = transaction(storeNames, mode, options);
+    if (mode === 'readwrite') {
+      const stores = [].concat(storeNames).filter((name) => DATA_STORES.includes(name));
+      const silent = muted > 0; // decided now: the flag may be gone when 'complete' fires
+      if (stores.length && !silent) {
+        tx.addEventListener('complete', () => {
+          for (const callback of changeListeners) {
+            try {
+              callback(stores);
+            } catch (err) {
+              console.error('Data change listener failed:', err);
+            }
+          }
+        });
+      }
+    }
+    return tx;
+  };
+}
+
 // onBlocked: another tab still has an older version open, so the upgrade waits
 // until it closes. onVersionChange: a newer version (another tab, after an
 // update) wants to upgrade; this connection closes itself so it doesn't block it.
@@ -146,6 +192,7 @@ export function openDatabase({ onBlocked, onVersionChange } = {}) {
         db.close();
         onVersionChange?.();
       };
+      watchWrites(db);
       resolve(db);
     };
     request.onerror = (event) => reject(event.target.error);

@@ -407,6 +407,9 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 .restore-compare dt { font-weight: 600; color: var(--ink-muted); }
 .restore-compare dd { margin: 0; }
 .restore-save { align-self: flex-start; }
+.sync-actions { flex-wrap: wrap; }
+.sync-status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; margin-top: 0.25rem; }
+.sync-status .btn-sm { padding-block: 0.125rem; }
 .btn-danger-solid { background: #dc2626; color: #fff; }
 .btn-danger-solid:hover { background: #b91c1c; }
 .btn:disabled { opacity: 0.6; cursor: progress; }

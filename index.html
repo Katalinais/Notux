@@ -480,7 +480,7 @@
       <span class="logo logo-full login-logo" role="img" aria-label="Notux"></span>
       <div class="login-head">
         <h2 id="login-title">Inicia sesión</h2>
-        <p class="muted small">Tus tareas y notas se guardan en este dispositivo. Con Google, además, puedes respaldarlas en tu Drive.</p>
+        <p class="muted small">Con una cuenta tus datos te siguen a todos tus dispositivos; con Google, además, puedes respaldarlos en tu Drive. Sin cuenta se quedan solo en este navegador.</p>
       </div>
 
       <button type="button" id="login-google" class="btn btn-google login-google">
@@ -505,6 +505,28 @@
 
       <p id="login-offline" class="notice-warn small" hidden>Sin conexión: necesitas internet para iniciar sesión.</p>
       <button type="button" id="login-skip" class="btn btn-ghost login-skip">Continuar sin cuenta</button>
+    </div>
+  </dialog>
+
+  <!-- Which data to keep when this browser and the account both changed (js/sync.js). -->
+  <dialog id="sync-dialog" class="pw-dialog dialog-wide" aria-labelledby="sync-title" aria-describedby="sync-desc">
+    <div class="card form">
+      <h2 id="sync-title">¿Qué datos quieres conservar?</h2>
+      <p id="sync-desc" class="muted small"></p>
+      <dl class="restore-compare">
+        <dt>En tu cuenta</dt><dd id="sync-remote"></dd>
+        <dt>En este navegador</dt><dd id="sync-local"></dd>
+      </dl>
+      <p class="notice-warn small">Los datos que no elijas se reemplazan. Si dudas, descarga primero una copia de los de este navegador.</p>
+      <button type="button" id="sync-download" class="btn btn-ghost btn-sm restore-save">
+        <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-download"/></svg> Descargar copia de este navegador
+      </button>
+      <p id="sync-error" class="task-meta overdue" role="alert" hidden></p>
+      <div class="dialog-actions sync-actions">
+        <button type="button" id="sync-later" class="btn btn-ghost">Ahora no</button>
+        <button type="button" id="sync-use-local" class="btn btn-ghost">Usar los de este navegador</button>
+        <button type="button" id="sync-use-remote" class="btn btn-primary">Usar los de mi cuenta</button>
+      </div>
     </div>
   </dialog>
 
@@ -637,6 +659,8 @@
       <section id="account-section" class="settings-section" aria-labelledby="account-title">
         <h3 id="account-title">Cuenta</h3>
         <div id="account-body" class="account-body"></div>
+        <!-- Filled in by js/sync.js while signed in. -->
+        <div id="sync-status" class="sync-status small muted" role="status" hidden></div>
       </section>
 
       <section id="install-section" class="settings-section" aria-labelledby="install-title" hidden>

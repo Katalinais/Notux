@@ -26,16 +26,17 @@ export function configureApp(app: NestExpressApplication): INestApplication {
   );
   app.enableCors({
     origin: config.frontendOrigins,
-    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Base-Version'],
+    exposedHeaders: ['X-Sync-Version'],
     credentials: false,
     maxAge: 600,
   });
 
   // Backups can be big (photos/audio as base64): 25 MB there, small bodies everywhere else.
-  // The raw bytes are kept so the backup is stored in Drive exactly as sent.
+  // The raw bytes are kept so the backup is stored (in Drive, or synced) exactly as sent.
   app.use(
-    '/drive/backups',
+    ['/drive/backups', '/sync/data'],
     json({
       limit: BACKUP_BODY_LIMIT,
       verify: (req, _res, buf) => {
@@ -53,7 +54,7 @@ export function configureApp(app: NestExpressApplication): INestApplication {
       app,
       new DocumentBuilder()
         .setTitle('Notux API')
-        .setDescription('Google login and Google Drive backups for the Notux PWA.')
+        .setDescription('Login, data sync across devices and Google Drive backups for the Notux PWA.')
         .setVersion('1')
         .addBearerAuth()
         .build(),

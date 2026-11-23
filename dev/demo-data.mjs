@@ -1,5 +1,7 @@
 // Writes a Notux backup full of example data (subjects, weekly schedule, tasks
-// and notes), with dates relative to today so it always looks current.
+// and notes), with dates relative to today so it always looks current. It also
+// covers what a backup has to carry byte for byte: private notes encrypted with
+// the password below (salt, IVs, ciphertexts), a photo and an audio recording.
 //
 //   npm run demo-data               -> dev/notux-demo.json
 //   node dev/demo-data.mjs out.json
@@ -8,6 +10,11 @@
 // is in that browser, so use it on a fresh profile or after downloading a backup.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
+import { deriveKeyFromPassword, encryptText, generateSalt } from '../js/crypto.js';
+
+// Password of the private notes in the demo data (Tareas → editar → Nota privada).
+const PRIVATE_NOTES_PASSWORD = 'notux1234';
 
 const out = process.argv[2] ?? fileURLToPath(new URL('./notux-demo.json', import.meta.url));
 const now = new Date();
@@ -82,6 +89,29 @@ const taskRows = [
   ['Listening practice 4', -3, 'low', 5, true],
   ['Rutina de piernas', -1, 'low', 6, true],
 ];
+// Same JSON shapes as js/backup.js writes for binary values.
+const b64 = (bytes) => Buffer.from(bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes).toString('base64');
+const u8 = (bytes) => ({ $type: 'uint8array', data: b64(bytes) });
+const buf = (bytes) => ({ $type: 'arraybuffer', data: b64(bytes) });
+const blob = (mime, bytes) => ({ $type: 'blob', mime, data: b64(bytes) });
+
+// Private notes: the same config js/vault.js creates, and notes encrypted with its key.
+const salt = generateSalt();
+const key = await deriveKeyFromPassword(PRIVATE_NOTES_PASSWORD, salt);
+const verification = await encryptText(key, 'notux-verificacion');
+const config = [
+  {
+    id: 'privateNotes',
+    salt: u8(salt),
+    verification: { ciphertext: buf(verification.ciphertext), iv: u8(verification.iv) },
+  },
+];
+const privateNotes = {
+  2: 'El profe dijo que el informe vale 30 %. Clave del laboratorio: 4512.',
+  6: 'Preguntarle a Luis si ya tiene las tablas de préstamos.',
+  9: 'Temas: partes, sustitución trigonométrica y fracciones parciales. Me cuesta la 3.',
+};
+
 const tasks = taskRows.map(([title, due, priority, subjectId, done], i) => ({
   id: i + 1,
   title,
@@ -94,6 +124,75 @@ const tasks = taskRows.map(([title, due, priority, subjectId, done], i) => ({
   encryptedNote: null,
   noteIv: null,
 }));
+for (const task of tasks) {
+  const text = privateNotes[task.id];
+  if (!text) continue;
+  const { ciphertext, iv } = await encryptText(key, text);
+  task.encryptedNote = buf(ciphertext);
+  task.noteIv = u8(iv);
+}
+
+// A small PNG: graph paper with a curve, like a photo of the board.
+function png(width, height, pixel) {
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < width; x++) raw.set(pixel(x, y), row + 1 + x * 3);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+const photo = png(320, 220, (x, y) => {
+  const curve = 110 - 80 * Math.sin((x / 320) * Math.PI * 2);
+  if (Math.abs(y - curve) < 2.5) return [79, 70, 229];
+  if (y === 110 || x === 20) return [51, 65, 85];
+  if (x % 20 === 0 || y % 20 === 0) return [199, 210, 254];
+  return [248, 250, 252];
+});
+
+// A short WAV: three rising notes, like a voice memo placeholder.
+function wav(seconds = 1.8, rate = 22050) {
+  const samples = Math.floor(seconds * rate);
+  const data = Buffer.alloc(samples * 2);
+  const notes = [440, 554.37, 659.25];
+  for (let i = 0; i < samples; i++) {
+    const t = i / rate;
+    const n = Math.min(notes.length - 1, Math.floor((t / seconds) * notes.length));
+    const local = t - (n * seconds) / notes.length;
+    const envelope = Math.min(1, local * 40) * Math.exp(-local * 3);
+    data.writeInt16LE(Math.round(Math.sin(2 * Math.PI * notes[n] * t) * envelope * 12000), i * 2);
+  }
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write('WAVEfmt ', 8, 'ascii');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
 
 const noteRows = [
   ['Fórmulas de integración', '∫ u dv = uv − ∫ v du\n∫ sec²x dx = tan x + C\nRevisar tabla de la página 412.', 1, -3],
@@ -119,6 +218,26 @@ const notes = noteRows.map(([title, text, subjectId, created], i) => ({
   audio: null,
   createdAt: at(created, 9 + i),
 }));
+notes.push(
+  {
+    id: notes.length + 1,
+    title: 'Foto del tablero: gráfica de sen(x)',
+    text: 'La tomé al final de la clase. Ojo con los cortes en el eje x.',
+    subjectId: 1,
+    photo: blob('image/png', photo),
+    audio: null,
+    createdAt: at(-1, 9),
+  },
+  {
+    id: notes.length + 2,
+    title: 'Audio: pronunciación unidad 5',
+    text: 'Grabación para repasar antes del quiz.',
+    subjectId: 5,
+    photo: null,
+    audio: blob('audio/wav', wav()),
+    createdAt: at(0, 8),
+  },
+);
 
 const backup = {
   app: 'notux',
@@ -129,10 +248,12 @@ const backup = {
   notes,
   subjects,
   schedule,
-  config: [],
+  config,
 };
 
 writeFileSync(out, JSON.stringify(backup, null, 2) + '\n');
 console.log(
-  `Escrito ${out}: ${subjects.length} materias, ${schedule.length} horarios, ${tasks.length} tareas, ${notes.length} notas.`,
+  `Escrito ${out}: ${subjects.length} materias, ${schedule.length} horarios, ${tasks.length} tareas ` +
+    `(${Object.keys(privateNotes).length} con nota privada), ${notes.length} notas (1 con foto, 1 con audio).`,
 );
+console.log(`Contraseña de las notas privadas: ${PRIVATE_NOTES_PASSWORD}`);

@@ -56,6 +56,7 @@ import {
 import * as reminders from './reminders.js';
 import { initAccount } from './account.js';
 import { initDriveBackups, refreshDriveBackups } from './drive-backups.js';
+import { initSync } from './sync.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
@@ -2070,6 +2071,7 @@ async function init() {
   render();
   renderNotesView();
   reminders.refresh(db).catch(() => {});
+  initSync({ getDb: () => db, onRemoteApplied: reloadAllData }); // only does something while signed in
 }
 
 navigate();

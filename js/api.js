@@ -95,10 +95,10 @@ async function errorFrom(response) {
 }
 
 /**
- * Calls the API and resolves with the parsed JSON (null for 204), or the text
- * when `as: 'text'`. Rejects with ApiError.
+ * Calls the API and resolves with the parsed JSON (null for 204), the text
+ * when `as: 'text'`, or `{ status, headers, text }` when `as: 'raw'`. Rejects with ApiError.
  * @param {string} path  e.g. '/drive/backups'
- * @param {{ method?: string, body?: unknown, headers?: object, auth?: boolean, timeout?: number, as?: 'json' | 'text' }} [options]
+ * @param {{ method?: string, body?: unknown, headers?: object, auth?: boolean, timeout?: number, as?: 'json' | 'text' | 'raw' }} [options]
  *   auth (default true) sends the access token and retries once after a refresh on 401.
  */
 export async function apiRequest(path, { method = 'GET', body, headers = {}, auth = true, timeout, as = 'json' } = {}) {
@@ -117,6 +117,7 @@ export async function apiRequest(path, { method = 'GET', body, headers = {}, aut
     response = await send(path, { ...opts, token });
   }
   if (!response.ok) throw await errorFrom(response);
+  if (as === 'raw') return { status: response.status, headers: response.headers, text: await response.text() };
   if (response.status === 204) return null;
   if (as === 'text') return response.text();
   const text = await response.text();

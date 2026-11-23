@@ -32,6 +32,22 @@ model User {
 
   refreshTokens RefreshToken[]
   loginCodes    LoginCode[]
+  syncedData    SyncedData?
+}
+
+/// The user's Notux data, synced across their devices: one snapshot per user,
+/// in the same JSON format as a backup (gzip-compressed). Each upload must say
+/// which version it was based on, so two devices can't overwrite each other unseen.
+model SyncedData {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Starts at 1 and goes up by one on every upload.
+  version   Int
+  /// gzip of the backup JSON exactly as the client sent it.
+  data      Bytes
+  /// Size of the uncompressed JSON, in bytes.
+  size      Int
+  updatedAt DateTime @updatedAt
 }
 
 model RefreshToken {

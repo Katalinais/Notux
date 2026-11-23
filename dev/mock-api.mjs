@@ -8,7 +8,7 @@
 // "Google" is fake: GET /auth/google redirects straight back to the app with a
 // login code for a test user. Drive backups are kept in memory.
 // Username/password: POST /auth/login accepts demo / demo1234 (no Drive, like
-// password accounts on the real API).
+// password accounts on the real API). Synced data (/sync) is kept in memory per account.
 //
 // Environment variables:
 //   PORT              port to listen on (default 3100)
@@ -59,6 +59,7 @@ const refreshTokens = new Map(); // token -> { family, revoked, expiresAt }
 const families = new Map(); // family -> 'google' | 'password' (whose session it is)
 const accessFamily = new Map(); // access token -> family
 const backups = []; // newest first: { id, name, createdTime, size, body }
+const synced = new Map(); // 'google' | 'password' -> { version, updatedAt, body }
 
 const token = (bytes = 24) => randomBytes(bytes).toString('base64url');
 
@@ -84,8 +85,9 @@ function corsHeaders(req) {
   if (!origin || !ORIGINS.includes(origin)) return {};
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Base-Version',
+    'Access-Control-Expose-Headers': 'X-Sync-Version',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };
@@ -252,6 +254,48 @@ async function route(req, res, url) {
 
   if (key === 'GET /users/me') {
     return send(req, res, 200, userView(requireUser(req)));
+  }
+
+  if (key === 'GET /sync') {
+    const s = synced.get(requireUser(req));
+    return send(
+      req,
+      res,
+      200,
+      s
+        ? { version: s.version, updatedAt: s.updatedAt, size: s.body.length }
+        : { version: 0, updatedAt: null, size: 0 },
+    );
+  }
+
+  if (key === 'GET /sync/data') {
+    const s = synced.get(requireUser(req));
+    if (!s) return send(req, res, 204);
+    return send(req, res, 200, s.body, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Sync-Version': String(s.version),
+    });
+  }
+
+  if (key === 'PUT /sync/data') {
+    const who = requireUser(req);
+    const base = req.headers['x-base-version'];
+    if (typeof base !== 'string' || !/^\d{1,9}$/.test(base))
+      throw new HttpError(400, 'X-Base-Version must be a version number', 'INVALID_BASE_VERSION');
+    const body = await readBody(req);
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      parsed = null;
+    }
+    if (parsed?.app !== 'notux' || parsed.format !== 1)
+      throw new HttpError(400, 'Body is not a Notux backup', 'INVALID_BACKUP');
+    const current = synced.get(who)?.version ?? 0;
+    if (Number(base) !== current) throw new HttpError(409, 'Your data changed on another device', 'SYNC_CONFLICT');
+    const next = { version: current + 1, updatedAt: new Date().toISOString(), body };
+    synced.set(who, next);
+    return send(req, res, 200, { version: next.version, updatedAt: next.updatedAt, size: body.length });
   }
 
   if (pathname === '/drive/backups' || pathname.startsWith('/drive/backups/')) {

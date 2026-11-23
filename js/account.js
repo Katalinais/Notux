@@ -58,7 +58,7 @@ function signedOutView() {
     'p',
     { id: 'account-hint', class: online ? 'muted small' : 'notice-warn small' },
     online
-      ? 'Inicia sesión con Google (para guardar respaldos en tu Google Drive) o con tu usuario y contraseña. Es opcional: sin cuenta todo sigue funcionando.'
+      ? 'Inicia sesión para tener tus datos en todos tus dispositivos (con Google, además, respaldos en tu Drive). Es opcional: sin cuenta todo sigue funcionando y tus datos se quedan en este navegador.'
       : 'Sin conexión: necesitas internet para iniciar sesión. Sin cuenta todo sigue funcionando.',
   );
   const btn = h(
@@ -95,8 +95,8 @@ function signedInView(profile) {
       !navigator.onLine
         ? 'Sin conexión: tu sesión sigue guardada en este dispositivo.'
         : profile.provider === 'password'
-          ? 'Tus datos siguen guardados en este navegador. Los respaldos en Google Drive necesitan una cuenta de Google.'
-          : 'Puedes guardar respaldos en tu Google Drive (abajo, en Respaldo). Tus datos siguen guardados en este navegador.',
+          ? 'Tus datos se sincronizan con tu cuenta y quedan también en este navegador para usarlos sin conexión. Los respaldos en Google Drive necesitan una cuenta de Google.'
+          : 'Tus datos se sincronizan con tu cuenta y quedan también en este navegador para usarlos sin conexión. Además puedes guardar respaldos en tu Google Drive (abajo, en Respaldo).',
     ),
     h(
       'button',
