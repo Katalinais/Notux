@@ -7,6 +7,7 @@ import { APP_CONFIG, type AppConfig } from './config/env';
 
 export const BACKUP_BODY_LIMIT = '25mb';
 export const DEFAULT_BODY_LIMIT = '100kb';
+export const AI_BODY_LIMIT = '512kb';
 
 /**
  * Everything main.ts and the e2e tests share. The app must be created with `{ bodyParser: false }`
@@ -44,6 +45,8 @@ export function configureApp(app: NestExpressApplication): INestApplication {
       },
     }),
   );
+  // Notes sent to generate a quiz (up to ~60,000 characters; accents take 2 bytes each).
+  app.use('/ai/quiz', json({ limit: AI_BODY_LIMIT }));
   app.use(json({ limit: DEFAULT_BODY_LIMIT }));
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));

@@ -19,6 +19,8 @@ export interface AppConfig {
   /** Express "trust proxy" setting (needed behind Render/Railway/Fly so rate limiting sees real IPs). */
   trustProxy: boolean | number | string;
   swaggerEnabled: boolean;
+  /** Anthropic API key for AI features (quizzes from notes). Null = those features answer 503. */
+  anthropicApiKey: string | null;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -124,5 +126,6 @@ export function validateEnv(env: Env): AppConfig {
     refreshTokenTtlDays,
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     swaggerEnabled: parseBoolean(env.SWAGGER_ENABLED, true),
+    anthropicApiKey: env.ANTHROPIC_API_KEY?.trim() || null,
   };
 }

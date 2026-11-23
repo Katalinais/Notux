@@ -57,6 +57,7 @@ import * as reminders from './reminders.js';
 import { initAccount } from './account.js';
 import { initDriveBackups, refreshDriveBackups } from './drive-backups.js';
 import { initSync } from './sync.js';
+import { initQuiz } from './quiz.js';
 
 const TASKS_KEY = 'notux.tasks';
 const PRIORITY_LABEL = { high: 'Alta', medium: 'Media', low: 'Baja' };
@@ -1846,6 +1847,19 @@ function openRestoreDialog(parsed, { source = 'file' } = {}) {
 }
 
 initDriveBackups({ getDb: () => db, confirmRestore: openRestoreDialog, onBackupSaved: markBackupSaved });
+
+// "Generar quiz" uses the notes on the board, with the subject filter applied.
+initQuiz({
+  getSource: () => ({
+    notes: notes.filter((n) => noteMatchesFilter(n)).map((n) => ({ title: n.title ?? '', text: n.text ?? '' })),
+    label:
+      notesFilter === 'all'
+        ? 'todas tus notas'
+        : notesFilter === 'none'
+          ? 'las notas sin materia'
+          : `las notas de ${schedule.subject(notesFilter)?.name ?? 'la materia'}`,
+  }),
+});
 
 $('restore-save-current').addEventListener('click', async () => {
   try {

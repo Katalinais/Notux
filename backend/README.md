@@ -126,6 +126,10 @@ Límite de peticiones: 120 por minuto por IP en general y 20 por minuto en `/aut
 
 `GET /sync` devuelve `{ version, updatedAt, size }` (versión 0 = nada guardado). `GET /sync/data` devuelve los datos (el mismo JSON que un respaldo) con su versión en la cabecera `X-Sync-Version`, o 204. `PUT /sync/data` los reemplaza: lleva la cabecera `X-Base-Version` con la versión en la que se basan y responde 409 `SYNC_CONFLICT` si otro dispositivo subió algo después; así ningún dispositivo pisa a otro sin enterarse. Se guarda una copia por usuario, comprimida con gzip, en la tabla `SyncedData` (hasta 25 MB por subida).
 
+### Quiz con IA
+
+`POST /ai/quiz` con `{ notes: [{ title, text }], count }` (1 a 40 notas, hasta 6 000 caracteres cada una y 60 000 en total; `count` de 3 a 15) devuelve `{ title, questions: [{ question, options (4), correctIndex, explanation, sourceNote }] }`. Lo genera Claude (`claude-opus-5-5`, salida estructurada con Zod y respaldo automático si el modelo declina). Máximo 6 por minuto. Sin `ANTHROPIC_API_KEY` responde 503 `AI_NOT_CONFIGURED`; si Claude falla, 503 `AI_UNAVAILABLE`; si no sale ninguna pregunta válida, 422 `AI_REFUSED`. Las notas solo se envían a Anthropic para esa petición; el servidor no las guarda.
+
 ### Usuario y contraseña
 
 Además de Google hay cuentas con usuario y contraseña, creadas en el servidor (no hay registro público). La contraseña se guarda solo como hash scrypt, y un usuario inexistente tarda lo mismo en rechazarse que una contraseña equivocada. Estas cuentas no tienen Google Drive: `user.provider` es `"password"` y `driveConnected` es `false`.

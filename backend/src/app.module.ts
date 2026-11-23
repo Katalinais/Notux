@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from './config/config.module';
 import { APP_CONFIG, type AppConfig } from './config/env';
 import { DriveModule } from './drive/drive.module';
+import { AiModule } from './ai/ai.module';
 import { SyncModule } from './sync/sync.module';
 import { GoogleModule } from './google/google.module';
 import { HealthModule } from './health/health.module';
@@ -29,6 +30,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     DriveModule,
     SyncModule,
+    AiModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

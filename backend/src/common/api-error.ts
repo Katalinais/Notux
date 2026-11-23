@@ -7,6 +7,10 @@ export const ErrorCode = {
   INVALID_REDIRECT: 'INVALID_REDIRECT',
   INVALID_BACKUP: 'INVALID_BACKUP',
   SYNC_CONFLICT: 'SYNC_CONFLICT',
+  AI_NOT_CONFIGURED: 'AI_NOT_CONFIGURED',
+  AI_UNAVAILABLE: 'AI_UNAVAILABLE',
+  AI_REFUSED: 'AI_REFUSED',
+  AI_TOO_MUCH_TEXT: 'AI_TOO_MUCH_TEXT',
   INVALID_BASE_VERSION: 'INVALID_BASE_VERSION',
   BACKUP_NOT_FOUND: 'BACKUP_NOT_FOUND',
   DRIVE_NOT_AUTHORIZED: 'DRIVE_NOT_AUTHORIZED',
@@ -20,6 +24,8 @@ const ERROR_NAMES: Partial<Record<number, string>> = {
   403: 'Forbidden',
   404: 'Not Found',
   409: 'Conflict',
+  422: 'Unprocessable Entity',
+  503: 'Service Unavailable',
   502: 'Bad Gateway',
 };
 

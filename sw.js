@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notux-v18';
+const CACHE_NAME = 'notux-v19';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,7 @@ const CORE_ASSETS = [
   './js/account.js',
   './js/login.js',
   './js/sync.js',
+  './js/quiz.js',
   './js/drive-backups.js',
   './icons/favicon-64.png',
   './icons/logo.png',

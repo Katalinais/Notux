@@ -408,6 +408,37 @@ textarea.input { resize: vertical; min-height: 2.5rem; }
 .restore-compare dd { margin: 0; }
 .restore-save { align-self: flex-start; }
 .sync-actions { flex-wrap: wrap; }
+
+/* Quiz (js/quiz.js) */
+.quiz-body { display: flex; flex-direction: column; gap: 0.75rem; }
+.quiz-progress { margin: 0; }
+.quiz-question { margin: 0; font-weight: 600; line-height: 1.4; }
+.quiz-options { display: flex; flex-direction: column; gap: 0.5rem; }
+.quiz-option {
+  display: flex; align-items: flex-start; gap: 0.625rem; width: 100%; padding: 0.625rem 0.75rem;
+  border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface-2); color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.quiz-option:hover:not(:disabled) { border-color: var(--brand-500); }
+.quiz-option:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.quiz-option:disabled { cursor: default; }
+.quiz-letter {
+  display: inline-grid; flex: none; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 999px; background: var(--surface-3); font-size: 0.75rem; font-weight: 600;
+}
+.quiz-option.is-correct { border-color: #16a34a; background: rgb(22 163 74 / 0.12); }
+.quiz-option.is-wrong { border-color: #dc2626; background: rgb(220 38 38 / 0.1); }
+.quiz-option.is-correct .quiz-letter { background: #16a34a; color: #fff; }
+.quiz-option.is-wrong .quiz-letter { background: #dc2626; color: #fff; }
+.quiz-feedback { border-radius: 0.5rem; padding: 0.625rem 0.75rem; font-size: 0.875rem; line-height: 1.45; }
+.quiz-feedback.is-correct { background: rgb(22 163 74 / 0.12); }
+.quiz-feedback.is-wrong { background: rgb(220 38 38 / 0.1); }
+.quiz-source { display: block; margin-top: 0.25rem; }
+.quiz-loading { margin: 0.5rem 0; }
+.quiz-score { margin: 0; font-size: 1.125rem; }
+.quiz-missed { display: flex; flex-direction: column; gap: 0.5rem; margin: 0; padding-left: 1.25rem; font-size: 0.875rem; }
+.quiz-missed span { display: block; }
+@media (forced-colors: active) { .quiz-option.is-correct, .quiz-option.is-wrong { border-width: 3px; } }
 .sync-status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; margin-top: 0.25rem; }
 .sync-status .btn-sm { padding-block: 0.125rem; }
 .btn-danger-solid { background: #dc2626; color: #fff; }

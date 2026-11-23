@@ -453,6 +453,10 @@
               <div id="notes-filter" class="filter-chips" role="group" aria-label="Filtrar por materia"></div>
               <p id="notes-count" class="muted small" aria-live="polite"></p>
               <button type="button" id="notes-arrange" class="btn btn-ghost btn-sm" hidden>Ordenar</button>
+              <!-- js/quiz.js: only when the Notux API is configured. -->
+              <button type="button" id="notes-quiz" class="btn btn-ghost btn-sm" hidden>
+                <svg class="icon" width="16" height="16" aria-hidden="true"><use href="#i-check-circle"/></svg> Generar quiz
+              </button>
             </div>
             <p id="notes-board-help" class="muted small notes-help" hidden>Arrastra las notas para acomodarlas donde quieras. Con el teclado: enfoca el asa <span aria-hidden="true">⠿</span> y usa las flechas (Mayús para pasos grandes).</p>
             <div id="notes-empty"></div>
@@ -527,6 +531,14 @@
         <button type="button" id="sync-use-local" class="btn btn-ghost">Usar los de este navegador</button>
         <button type="button" id="sync-use-remote" class="btn btn-primary">Usar los de mi cuenta</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- Quiz generated from the notes with AI (js/quiz.js). -->
+  <dialog id="quiz-dialog" class="pw-dialog dialog-wide" aria-labelledby="quiz-title">
+    <div class="card form">
+      <h2 id="quiz-title">Quiz con IA</h2>
+      <div id="quiz-body" class="quiz-body"></div>
     </div>
   </dialog>
 
