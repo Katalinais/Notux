@@ -1,0 +1,4 @@
+backend/
+dev/
+.claude/
+node_modules/
